@@ -1,6 +1,7 @@
 import sys
 
 from PyQt5 import QtCore
+from PyQt5.QtCore import QSize
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 
@@ -8,6 +9,7 @@ from PyQt5.QtGui import *
 class Project(QMainWindow):
     def __init__(self):
         super(Project, self).__init__()
+        self.toolbar = None
         self.buttons()
         self.ext = None
         self.btn_exit = None
@@ -18,6 +20,7 @@ class Project(QMainWindow):
         self.setWindowTitle("VCP")
         self.setGeometry(0, 0, 1920, 1080)
         self.create_menu_bar()
+        self.create_tool_bar()
 
     def buttons(self):
         self.btn_exit = QPushButton(self)
@@ -31,6 +34,7 @@ class Project(QMainWindow):
         ext.setWindowTitle("Выход")
         ext.setText("Вы действительно хотите выйти?")
         ext.setIcon(QMessageBox.Question)
+        ext.setWindowIcon(QIcon('Tape2.jpg'))
         ext.setStandardButtons(QMessageBox.Save | QMessageBox.Yes | QMessageBox.No)
         ext.setInformativeText("Сохраните проект перед выходом")
         ext.buttonClicked.connect(self.press)
@@ -38,6 +42,7 @@ class Project(QMainWindow):
 
     def press(self, btn):
         if btn.text() == "Yes":
+            sys.exit()
         elif btn.text() == "Save":
             file = QFileDialog.getSaveFileName(self)[0]
             try:
@@ -56,6 +61,24 @@ class Project(QMainWindow):
         fileMenu.addAction('Open', self.action_clicked)
         fileMenu.addAction('Save', self.action_clicked)
         fileMenu.addAction('Save As', self.action_clicked)
+
+    def create_tool_bar(self):
+        battery = QAction(QIcon('battery.png'), 'Battery', self)
+        # tools.setShortcut('Ctrl+Q') Нужно для понимания
+        # tools.triggered.connect(qApp.quit)
+        key = QAction(QIcon('key.png'), 'Key', self)
+        resistor = QAction(QIcon('resistor.png'), 'Resistor', self)
+        lamp = QAction(QIcon('lamp.png'), 'Lamp', self)
+        wire = QAction(QIcon('wire.png'), 'Wire', self)
+
+        self.toolbar = self.addToolBar('tools')
+        self.toolbar.addAction(battery)
+        self.toolbar.addAction(key)
+        self.toolbar.addAction(resistor)
+        self.toolbar.addAction(lamp)
+        self.toolbar.addAction(wire)
+        self.toolbar.setFixedHeight(100)
+        self.toolbar.setIconSize(QSize(50, 50))
 
     @QtCore.pyqtSlot()
     def action_clicked(self):
