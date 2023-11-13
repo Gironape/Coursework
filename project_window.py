@@ -1,7 +1,9 @@
+import random
 import sys
 
+import tools as tl
 from PyQt5 import QtCore
-from PyQt5.QtCore import QSize
+from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 
@@ -9,7 +11,7 @@ from PyQt5.QtGui import *
 class Project(QMainWindow):
     def __init__(self):
         super(Project, self).__init__()
-        self.toolbar = None
+        self.toolbar = QToolBar("My main toolbar")
         self.buttons()
         self.ext = None
         self.btn_exit = None
@@ -21,6 +23,7 @@ class Project(QMainWindow):
         self.setGeometry(0, 0, 1920, 1080)
         self.create_menu_bar()
         self.create_tool_bar()
+        self.setAcceptDrops(True)
 
     def buttons(self):
         self.btn_exit = QPushButton(self)
@@ -46,7 +49,7 @@ class Project(QMainWindow):
         elif btn.text() == "Save":
             file = QFileDialog.getSaveFileName(self)[0]
             try:
-                f = open(file, 'r')
+                f = open(file, 'w')
                 f.write(file)
             except FileNotFoundError:
                 print("No such file")
@@ -58,9 +61,9 @@ class Project(QMainWindow):
         fileMenu = QMenu("&File", self)
         self.menuBar.addMenu(fileMenu)
 
-        fileMenu.addAction('Open', self.action_clicked)
-        fileMenu.addAction('Save', self.action_clicked)
-        fileMenu.addAction('Save As', self.action_clicked)
+        fileMenu.addAction('Open', self.menu_bar_clicked)
+        fileMenu.addAction('Save', self.menu_bar_clicked)
+        fileMenu.addAction('Save As', self.menu_bar_clicked)
 
     def create_tool_bar(self):
         battery = QAction(QIcon('battery.png'), 'Battery', self)
@@ -79,8 +82,18 @@ class Project(QMainWindow):
         self.toolbar.addAction(wire)
         self.toolbar.setFixedHeight(100)
         self.toolbar.setIconSize(QSize(50, 50))
+        self.toolbar.actionTriggered.connect(self.tool_bar_clicked)
 
     @QtCore.pyqtSlot()
-    def action_clicked(self):
+    def menu_bar_clicked(self):
         action = self.sender()
         print("Action: " + action.text())
+
+    def tool_bar_clicked(self, btn):
+        if btn.text() == "Battery":
+            battery = QPushButton('Battery', self)
+            battery.move(random.randint(0, 300), random.randint(0, 180))
+            battery.show()
+            bat = tl.Tools()
+            bat.show()
+
