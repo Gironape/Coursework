@@ -5,6 +5,9 @@ from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
+CONNECTIONS = {
+    "None", "Lamp", "Battery", "Key"
+}
 
 
 class Project(QMainWindow):
@@ -27,7 +30,6 @@ class Project(QMainWindow):
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
         self.view.mouseDoubleClickEvent = self.mouseDoubleClickEvent
-
 
     def buttons(self):
         self.btn_exit = QPushButton(self)
@@ -94,23 +96,23 @@ class Project(QMainWindow):
     def tool_bar_clicked(self, btn):
         if btn.text() == "Lamp":
             lamp = QPixmap('Lamp.png')
-            pixmap_item = QGraphicsPixmapItem(lamp.scaled(60, 60))
-            pixmap_item.setFlag(QGraphicsItem.ItemIsMovable)
-            self.scene.addItem(pixmap_item)
+            lamp_item = Lamp(lamp.scaled(60, 60))
+            self.scene.addItem(lamp_item)
         elif btn.text() == "Key":
             key = QPixmap('Key.png')
-            pixmap_item = QGraphicsPixmapItem(key.scaled(60, 60))
-            pixmap_item.setFlag(QGraphicsItem.ItemIsMovable)
-            self.scene.addItem(pixmap_item)
+            key_item = Key(key.scaled(60, 60))
+            self.scene.addItem(key_item)
         elif btn.text() == "Battery":
             battery = QPixmap('Battery.png')
-            pixmap_item = CustomItem(battery.scaled(60, 60))
-            pixmap_item.setFlag(QGraphicsItem.ItemIsMovable)
-            self.scene.addItem(pixmap_item)
+            battery_item = Battery(battery.scaled(60, 60))
+            self.scene.addItem(battery_item)
 
 
 class Scene(QtWidgets.QGraphicsScene):
     startItem = newConnection = None
+    check = False
+    connections = []
+    to = None
 
     def controlPointAt(self, pos):
         mask = QPainterPath()
@@ -129,6 +131,7 @@ class Scene(QtWidgets.QGraphicsScene):
             item = self.controlPointAt(event.scenePos())
             if item:
                 self.startItem = item
+                print(self.startItem)
                 self.newConnection = Connection(item, event.scenePos())
                 self.addItem(self.newConnection)
                 return
@@ -138,8 +141,8 @@ class Scene(QtWidgets.QGraphicsScene):
         if self.newConnection:
             item = self.controlPointAt(event.scenePos())
             if (item and item != self.startItem and
-                self.startItem.onLeft != item.onLeft):
-                    p2 = item.scenePos()
+                    self.startItem.onLeft != item.onLeft):
+                p2 = item.scenePos()
             else:
                 p2 = event.scenePos()
             self.newConnection.setP2(p2)
@@ -153,6 +156,9 @@ class Scene(QtWidgets.QGraphicsScene):
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
+                    self.to = item
+                    print("to", self.to)
+                    print("Jambo", self.newConnection.checker())
                 else:
                     # delete the connection if it exists; remove the following
                     # line if this feature is not required
@@ -163,6 +169,12 @@ class Scene(QtWidgets.QGraphicsScene):
         self.startItem = self.newConnection = None
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+        item = self.controlPointAt(event.scenePos())
+        if isinstance(item, Connection):
+            self.removeItem(item)
+        super().mouseDoubleClickEvent(event)
+
 
 class Connection(QtWidgets.QGraphicsLineItem):
     def __init__(self, start, p2):
@@ -170,7 +182,6 @@ class Connection(QtWidgets.QGraphicsLineItem):
         self.start = start
         self.end = None
         self._line = QtCore.QLineF(start.scenePos(), p2)
-        self.setLine(self._line)
 
     def controlPoints(self):
         return self.start, self.end
@@ -181,6 +192,7 @@ class Connection(QtWidgets.QGraphicsLineItem):
 
     def setStart(self, start):
         self.start = start
+        print(self.start)
         self.updateLine()
 
     def setEnd(self, end):
@@ -194,6 +206,15 @@ class Connection(QtWidgets.QGraphicsLineItem):
             self._line.setP2(source.scenePos())
         self.setLine(self._line)
 
+    def checker(self):
+        for item in self.scene().items():
+            if isinstance(item, CustomItem):
+                if item.connect_minus == self.end:
+                    item2 = item
+                if item.connect_plus == self.start:
+                    item.wire_connection_plus = item2.name
+                    return item, item.wire_connection_plus, item.wire_connection_minus
+
 
 class ControlPoint(QtWidgets.QGraphicsEllipseItem):
     def __init__(self, parent, onLeft):
@@ -205,10 +226,12 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
 
     def addLine(self, lineItem):
         for existing in self.lines:
+            print("HUI NA", existing)
             if existing.controlPoints() == lineItem.controlPoints():
                 # another line with the same control points already exists
                 return False
         self.lines.append(lineItem)
+        # print(self.lines)
         return True
 
     def removeLine(self, lineItem):
@@ -226,29 +249,47 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
 
 
 class CustomItem(QtWidgets.QGraphicsPixmapItem):
-    def __init__(self, pixmap, left=True, right=True, parent=None):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, parent)
 
         self.setFlags(self.ItemIsMovable)
-
         self.controls = []
-
-        for onLeft, create in enumerate((right, left)):
-            if onLeft == right:
+        self.name = "None"
+        self.wire_connection_plus = "None"
+        self.wire_connection_minus = "None"
+        for onLeft, create in enumerate((minus, plus)):
+            if create:
                 control = ControlPoint(self, onLeft)
-                self.controls.append(control)
-                control.setPen(QPen(QtCore.Qt.red, 2))
-                control.setBrush(QBrush(QColor(214, 13, 36)))
+                if onLeft == plus:
+                    control.setPen(QPen(QtCore.Qt.red, 1))
+                    control.setBrush(QBrush(QColor(214, 13, 36)))
+                    self.controls.append(control)
+                    self.connect_plus = control
+                else:
+                    control.setPen(QPen(QtCore.Qt.blue, 1))
+                    control.setBrush(QBrush(QColor(0, 0, 255)))
+                    self.connect_minus = control
                 if onLeft:
                     control.setX(pixmap.width())
                 control.setY(pixmap.height() / 2)
-            else:
-                control = ControlPoint(self, onLeft)
-                self.controls.append(control)
-                control.setPen(QPen(QtCore.Qt.blue, 2))
-                control.setBrush(QBrush(QColor(00, 00, 255)))
-                if onLeft:
-                    control.setX(pixmap.width())
-                control.setY(pixmap.height() / 2)
 
 
+class Battery(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
+        super().__init__(pixmap, minus, plus, parent)
+
+        self.name = "Battery"
+
+
+class Lamp(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
+        super().__init__(pixmap, minus, plus, parent)
+
+        self.name = "Lamp"
+
+
+class Key(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
+        super().__init__(pixmap, minus, plus, parent)
+
+        self.name = "Key"
