@@ -1,13 +1,8 @@
 import sys
-
-import tools as tl
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-CONNECTIONS = {
-    "None", "Lamp", "Battery", "Key"
-}
 
 
 class Project(QMainWindow):
@@ -71,48 +66,85 @@ class Project(QMainWindow):
         fileMenu.addAction('Save', self.menu_bar_clicked)
         fileMenu.addAction('Save As', self.menu_bar_clicked)
 
+    # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
+    def save_file(self):
+        if self.current_file:
+            with open(self.current_file, 'w') as f:
+                f.write(self.get_file_contents())
+        else:
+            self.save_file_as()
+
+    def save_file_as(self):
+        file, _ = QFileDialog.getSaveFileName(self, "Save File", "", "Python Files (*.py)")
+        if file:
+            self.current_file = file
+            with open(file, 'w') as f:
+                f.write(self.get_file_contents())
+
+    def get_file_contents(self):
+        # Здесь вы можете получить содержимое файла, которое нужно сохранить
+        return "Hello, world!"
+
     def create_tool_bar(self):
-        battery = QAction(QIcon('battery.png'), 'Battery', self)
+        battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
         # tools.setShortcut('Ctrl+Q') Нужно для понимания
         # tools.triggered.connect(qApp.quit)
-        key = QAction(QIcon('key.png'), 'Key', self)
-        lamp = QAction(QIcon('lamp.png'), 'Lamp', self)
-        wire = QAction(QIcon('wire.png'), 'Wire', self)
+        key = QAction(QIcon('Tools/key.png'), 'Key', self)
+        lamp = QAction(QIcon('Tools/lamp_off.png'), 'Lamp', self)
+        self.start_stop = QAction(QIcon('Tools/start.png'), 'Start/Stop', self)
+        fan = QAction(QIcon('Tools/fan.gif'), 'Fan', self)
 
         self.toolbar = self.addToolBar('tools')
         self.toolbar.addAction(battery)
         self.toolbar.addAction(key)
         self.toolbar.addAction(lamp)
-        self.toolbar.addAction(wire)
+        self.toolbar.addAction(fan)
+        separator = QLabel('', self)
+        separator.setFixedWidth(700)  # Устанавливаем фиксированную ширину разделителя
+        self.toolbar.addWidget(separator)
+        self.toolbar.addAction(self.start_stop)
         self.toolbar.setFixedHeight(100)
         self.toolbar.setIconSize(QSize(50, 50))
+
         self.toolbar.actionTriggered.connect(self.tool_bar_clicked)
 
     @QtCore.pyqtSlot()
     def menu_bar_clicked(self):
         action = self.sender()
-        print("Action: " + action.text())
+        if action.text() == "Save":
+            self.save_file_as()
 
     def tool_bar_clicked(self, btn):
         if btn.text() == "Lamp":
-            lamp = QPixmap('Lamp.png')
+            lamp = QPixmap('Tools/Lamp_off.png')
             lamp_item = Lamp(lamp.scaled(60, 60))
             self.scene.addItem(lamp_item)
         elif btn.text() == "Key":
-            key = QPixmap('Key.png')
+            key = QPixmap('Tools/Key.png')
             key_item = Key(key.scaled(60, 60))
             self.scene.addItem(key_item)
         elif btn.text() == "Battery":
-            battery = QPixmap('Battery.png')
+            battery = QPixmap('Tools/Battery.png')
             battery_item = Battery(battery.scaled(60, 60))
             self.scene.addItem(battery_item)
+        elif btn.text() == "Start/Stop":
+            if self.start_stop.property("state") is None or self.start_stop.property("state") == "on":
+                self.start_stop.setIcon(QIcon('Tools/stop.png'))
+                self.start_stop.setProperty("state", "off")
+                Include().lamp_light(self.scene, on=False)
+            else:
+                self.start_stop.setIcon(QIcon('Tools/start.png'))
+                self.start_stop.setProperty("state", "on")
+                Include().lamp_light(self.scene, on=True)
+                print("Stop")
+        elif btn.text() == "Fan":
+            fan = QPixmap('Tools/fan.gif')
+            self.fan_item = Fan(fan)
+            self.scene.addItem(self.fan_item)
 
 
 class Scene(QtWidgets.QGraphicsScene):
     startItem = newConnection = None
-    check = False
-    connections = []
-    to = None
 
     def controlPointAt(self, pos):
         mask = QPainterPath()
@@ -156,24 +188,19 @@ class Scene(QtWidgets.QGraphicsScene):
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
-                    self.to = item
-                    print("to", self.to)
-                    print("Jambo", self.newConnection.checker())
+                    print("Jambo", self.newConnection.add_connection())
                 else:
                     # delete the connection if it exists; remove the following
                     # line if this feature is not required
+                    print("SOBAKA", self.newConnection.delete_connection())
+                    item.removeLine(self.newConnection)
                     self.startItem.removeLine(self.newConnection)
                     self.removeItem(self.newConnection)
+
             else:
                 self.removeItem(self.newConnection)
         self.startItem = self.newConnection = None
         super().mouseReleaseEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        item = self.controlPointAt(event.scenePos())
-        if isinstance(item, Connection):
-            self.removeItem(item)
-        super().mouseDoubleClickEvent(event)
 
 
 class Connection(QtWidgets.QGraphicsLineItem):
@@ -192,28 +219,54 @@ class Connection(QtWidgets.QGraphicsLineItem):
 
     def setStart(self, start):
         self.start = start
-        print(self.start)
+        print("START POINT", self.start)
         self.updateLine()
 
     def setEnd(self, end):
         self.end = end
+        print("END POINT", self.end)
         self.updateLine(end)
 
     def updateLine(self, source):
         if source == self.start:
             self._line.setP1(source.scenePos())
+            print("Start", source)
         else:
             self._line.setP2(source.scenePos())
+            print("End", source)
         self.setLine(self._line)
 
-    def checker(self):
+    def add_connection(self) -> None:
         for item in self.scene().items():
             if isinstance(item, CustomItem):
-                if item.connect_minus == self.end:
-                    item2 = item
                 if item.connect_plus == self.start:
-                    item.wire_connection_plus = item2.name
-                    return item, item.wire_connection_plus, item.wire_connection_minus
+                    for item2 in self.scene().items():
+                        if isinstance(item2, CustomItem):
+                            if item2.connect_minus == self.end:
+                                item.wire_connection_plus = item2.name
+                                item2.wire_connection_minus = item.name
+                elif item.connect_minus == self.start:
+                    for item2 in self.scene().items():
+                        if isinstance(item2, CustomItem):
+                            if item2.connect_plus == self.end:
+                                item.wire_connection_minus = item2.name
+                                item2.wire_connection_plus = item.name
+
+    def delete_connection(self) -> None:
+        for item in self.scene().items():
+            if isinstance(item, CustomItem):
+                if item.connect_plus == self.start:
+                    for item2 in self.scene().items():
+                        if isinstance(item2, CustomItem):
+                            if item2.connect_minus == self.end:
+                                item.wire_connection_plus = "None"
+                                item2.wire_connection_minus = "None"
+                elif item.connect_minus == self.start:
+                    for item2 in self.scene().items():
+                        if isinstance(item2, CustomItem):
+                            if item2.connect_plus == self.end:
+                                item.wire_connection_minus = "None"
+                                item2.wire_connection_plus = "None"
 
 
 class ControlPoint(QtWidgets.QGraphicsEllipseItem):
@@ -226,12 +279,10 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
 
     def addLine(self, lineItem):
         for existing in self.lines:
-            print("HUI NA", existing)
             if existing.controlPoints() == lineItem.controlPoints():
                 # another line with the same control points already exists
                 return False
         self.lines.append(lineItem)
-        # print(self.lines)
         return True
 
     def removeLine(self, lineItem):
@@ -275,9 +326,9 @@ class CustomItem(QtWidgets.QGraphicsPixmapItem):
 
 
 class Battery(CustomItem):
+
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
-
         self.name = "Battery"
 
 
@@ -293,3 +344,28 @@ class Key(CustomItem):
         super().__init__(pixmap, minus, plus, parent)
 
         self.name = "Key"
+
+
+class Fan(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
+        super().__init__(pixmap, minus, plus, parent)
+        self.name = "Fan"
+
+
+
+
+class Include:
+    def __init__(self):
+        super().__init__()
+
+    def lamp_light(self, scene, on):
+        if not on:
+            for item in scene.items():
+                if isinstance(item, Lamp):
+                    if (item.wire_connection_plus == "Battery" and item.wire_connection_minus == "Battery") or (
+                            item.wire_connection_plus == "Battery" and item.wire_connection_minus == "Key"):
+                        item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
+        elif on:
+            for item in scene.items():
+                if isinstance(item, Lamp):
+                    item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
