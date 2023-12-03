@@ -1,3 +1,4 @@
+import pickle
 import sys
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import *
@@ -67,23 +68,14 @@ class Project(QMainWindow):
         fileMenu.addAction('Save As', self.menu_bar_clicked)
 
     # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
-    def save_file(self):
-        if self.current_file:
-            with open(self.current_file, 'w') as f:
-                f.write(self.get_file_contents())
-        else:
-            self.save_file_as()
 
-    def save_file_as(self):
-        file, _ = QFileDialog.getSaveFileName(self, "Save File", "", "Python Files (*.py)")
-        if file:
-            self.current_file = file
-            with open(file, 'w') as f:
-                f.write(self.get_file_contents())
-
-    def get_file_contents(self):
-        # Здесь вы можете получить содержимое файла, которое нужно сохранить
-        return "Hello, world!"
+    def save_project(self):
+        file_name, _ = QFileDialog.getSaveFileName(self, "Save Project", "", "Project Files (*.proj);;All Files (*)")
+        if file_name:
+            with open(file_name, 'wb') as f:
+                for item in self.scene.items():
+                    pickle.dump(item, f)
+            f.close()
 
     def create_tool_bar(self):
         battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
@@ -93,11 +85,13 @@ class Project(QMainWindow):
         lamp = QAction(QIcon('Tools/lamp_off.png'), 'Lamp', self)
         self.start_stop = QAction(QIcon('Tools/start.png'), 'Start/Stop', self)
         fan = QAction(QIcon('Tools/fan.gif'), 'Fan', self)
+        accumulator = QAction(QIcon('Tools/accumulator.png'), 'Accumulator', self)
 
         self.toolbar = self.addToolBar('tools')
         self.toolbar.addAction(battery)
         self.toolbar.addAction(key)
         self.toolbar.addAction(lamp)
+        self.toolbar.addAction(accumulator)
         self.toolbar.addAction(fan)
         separator = QLabel('', self)
         separator.setFixedWidth(700)  # Устанавливаем фиксированную ширину разделителя
@@ -112,7 +106,9 @@ class Project(QMainWindow):
     def menu_bar_clicked(self):
         action = self.sender()
         if action.text() == "Save":
-            self.save_file_as()
+            self.save_project()
+        elif action.tex() == "Open":
+            pass
 
     def tool_bar_clicked(self, btn):
         if btn.text() == "Lamp":
@@ -131,16 +127,20 @@ class Project(QMainWindow):
             if self.start_stop.property("state") is None or self.start_stop.property("state") == "on":
                 self.start_stop.setIcon(QIcon('Tools/stop.png'))
                 self.start_stop.setProperty("state", "off")
-                Include().lamp_light(self.scene, on=False)
+                include(self.scene, on=False)
             else:
                 self.start_stop.setIcon(QIcon('Tools/start.png'))
                 self.start_stop.setProperty("state", "on")
-                Include().lamp_light(self.scene, on=True)
+                include(self.scene, on=True)
                 print("Stop")
         elif btn.text() == "Fan":
             fan = QPixmap('Tools/fan.gif')
-            self.fan_item = Fan(fan)
+            self.fan_item = Fan(fan.scaled(60, 60), gif_path='Tools/fan.gif')
             self.scene.addItem(self.fan_item)
+        elif btn.text() == "Accumulator":
+            accumulator = QPixmap('Tools/accumulator.png')
+            accumulator_item = Accumulator(accumulator.scaled(70, 60))
+            self.scene.addItem(accumulator_item)
 
 
 class Scene(QtWidgets.QGraphicsScene):
@@ -163,7 +163,6 @@ class Scene(QtWidgets.QGraphicsScene):
             item = self.controlPointAt(event.scenePos())
             if item:
                 self.startItem = item
-                print(self.startItem)
                 self.newConnection = Connection(item, event.scenePos())
                 self.addItem(self.newConnection)
                 return
@@ -188,11 +187,11 @@ class Scene(QtWidgets.QGraphicsScene):
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
-                    print("Jambo", self.newConnection.add_connection())
+                    print("BAZAR", self.newConnection.add_connection())
                 else:
                     # delete the connection if it exists; remove the following
                     # line if this feature is not required
-                    print("SOBAKA", self.newConnection.delete_connection())
+                    print("VOKZAL", self.newConnection.delete_connection())
                     item.removeLine(self.newConnection)
                     self.startItem.removeLine(self.newConnection)
                     self.removeItem(self.newConnection)
@@ -219,54 +218,54 @@ class Connection(QtWidgets.QGraphicsLineItem):
 
     def setStart(self, start):
         self.start = start
-        print("START POINT", self.start)
         self.updateLine()
 
     def setEnd(self, end):
         self.end = end
-        print("END POINT", self.end)
         self.updateLine(end)
 
     def updateLine(self, source):
         if source == self.start:
             self._line.setP1(source.scenePos())
-            print("Start", source)
         else:
             self._line.setP2(source.scenePos())
-            print("End", source)
         self.setLine(self._line)
 
-    def add_connection(self) -> None:
+    def add_connection(self):
         for item in self.scene().items():
             if isinstance(item, CustomItem):
                 if item.connect_plus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_minus == self.end:
-                                item.wire_connection_plus = item2.name
-                                item2.wire_connection_minus = item.name
+                                item.wire_connection_plus.append(item2.name)
+                                item2.wire_connection_minus.append(item.name)
+                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
                 elif item.connect_minus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_plus == self.end:
-                                item.wire_connection_minus = item2.name
-                                item2.wire_connection_plus = item.name
+                                item.wire_connection_minus.append(item2.name)
+                                item2.wire_connection_plus.append(item.name)
+                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
 
-    def delete_connection(self) -> None:
+    def delete_connection(self):
         for item in self.scene().items():
             if isinstance(item, CustomItem):
                 if item.connect_plus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_minus == self.end:
-                                item.wire_connection_plus = "None"
-                                item2.wire_connection_minus = "None"
+                                item.wire_connection_plus.remove(item2.name)
+                                item2.wire_connection_minus.remove(item.name)
+                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
                 elif item.connect_minus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_plus == self.end:
-                                item.wire_connection_minus = "None"
-                                item2.wire_connection_plus = "None"
+                                item.wire_connection_minus.remove(item2.name)
+                                item2.wire_connection_plus.remove(item.name)
+                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
 
 
 class ControlPoint(QtWidgets.QGraphicsEllipseItem):
@@ -303,18 +302,21 @@ class CustomItem(QtWidgets.QGraphicsPixmapItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, parent)
 
+        self.connect_minus = None
+        self.connect_plus = None
         self.setFlags(self.ItemIsMovable)
-        self.controls = []
         self.name = "None"
-        self.wire_connection_plus = "None"
-        self.wire_connection_minus = "None"
+        self.wire_connection_plus = []
+        self.wire_connection_minus = []
+        self.create(minus, plus, pixmap)
+
+    def create(self, minus, plus, pixmap):
         for onLeft, create in enumerate((minus, plus)):
             if create:
                 control = ControlPoint(self, onLeft)
                 if onLeft == plus:
                     control.setPen(QPen(QtCore.Qt.red, 1))
                     control.setBrush(QBrush(QColor(214, 13, 36)))
-                    self.controls.append(control)
                     self.connect_plus = control
                 else:
                     control.setPen(QPen(QtCore.Qt.blue, 1))
@@ -346,26 +348,73 @@ class Key(CustomItem):
         self.name = "Key"
 
 
-class Fan(CustomItem):
+class Accumulator(CustomItem):
+
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
+
+        self.name = "Accumulator"
+
+    def create(self, minus, plus, pixmap):
+        super().create(minus=True, plus=True, pixmap=pixmap)
+        self.connect_minus.setY(pixmap.height() / 12)
+        self.connect_minus.setX(pixmap.width() / 6)
+        self.connect_plus.setY(pixmap.height() / 12)
+        self.connect_plus.setX(pixmap.width() / 1.23)
+
+
+class Fan(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None, gif_path=""):
+        super().__init__(pixmap, minus, plus, parent)
+
         self.name = "Fan"
+        self.gif_movie = QMovie(gif_path) if gif_path else None
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_pixmap)
+        self.pixmap_number = 0
+        self.lvl = 1
+
+    def update_pixmap(self):
+        if self.gif_movie:
+            self.gif_movie.jumpToFrame(self.pixmap_number)
+            self.setPixmap(self.gif_movie.currentPixmap())
+            self.pixmap_number += 1
+            if self.pixmap_number >= self.gif_movie.frameCount():
+                self.pixmap_number = 0
+
+    def start(self):
+        if self.lvl == 1:
+            self.timer.start(200)
+        if self.lvl == 2:
+            self.timer.start(100)
+        if self.lvl == 3:
+            self.timer.start(50)
+
+    def stop(self):
+        self.timer.stop()
+
+    def level(self, item):
+        if "Battery" in item.wire_connection_plus and "Battery" in item.wire_connection_minus:
+            self.lvl = 3
+        else:
+            self.lvl = 1
 
 
-
-
-class Include:
-    def __init__(self):
-        super().__init__()
-
-    def lamp_light(self, scene, on):
-        if not on:
-            for item in scene.items():
-                if isinstance(item, Lamp):
-                    if (item.wire_connection_plus == "Battery" and item.wire_connection_minus == "Battery") or (
-                            item.wire_connection_plus == "Battery" and item.wire_connection_minus == "Key"):
-                        item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
-        elif on:
-            for item in scene.items():
-                if isinstance(item, Lamp):
-                    item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
+def include(scene, on):
+    if not on:
+        for item in scene.items():
+            if isinstance(item, Lamp):
+                if "Battery" or "Accumulator" in item.wire_connection_plus and "Battery" or "Accumulator" or "Key" in \
+                        item.wire_connection_minus:
+                    item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
+            if isinstance(item, Fan):
+                if "Battery" or "Accumulator" in item.wire_connection_plus and "Battery" or "Accumulator" or "Key" in \
+                        item.wire_connection_minus:
+                    item.level(item)
+                    item.start()
+    elif on:
+        for item in scene.items():
+            if isinstance(item, Lamp):
+                item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
+            if isinstance(item, Fan):
+                item.stop()
