@@ -1,5 +1,6 @@
 import pickle
 import sys
+
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
@@ -26,6 +27,7 @@ class Project(QMainWindow):
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
         self.view.mouseDoubleClickEvent = self.mouseDoubleClickEvent
+        self.for_redo = []
 
     def buttons(self):
         self.btn_exit = QPushButton(self)
@@ -62,20 +64,47 @@ class Project(QMainWindow):
 
         fileMenu = QMenu("&File", self)
         self.menuBar.addMenu(fileMenu)
+        open_file = QAction('Open', self)
+        save_file = QAction('Save', self)
+        save_file_as = QAction('Save as', self)
+        fileMenu.addAction(open_file)
+        fileMenu.addAction(save_file)
+        fileMenu.addAction(save_file_as)
+        fileMenu.triggered[QAction].connect(self.menu_bar_clicked)
 
-        fileMenu.addAction('Open', self.menu_bar_clicked)
-        fileMenu.addAction('Save', self.menu_bar_clicked)
-        fileMenu.addAction('Save As', self.menu_bar_clicked)
+        editMenu = QMenu("&Edit", self)
+        self.menuBar.addMenu(editMenu)
+        undo = QAction('Undo', self)
+        undo.setShortcut(QKeySequence.Undo)
+        redo = QAction('Redo', self)
+        redo.setShortcut('Ctrl+Shift+Z')
+        editMenu.addAction(undo)
+        editMenu.addAction(redo)
+        editMenu.triggered[QAction].connect(self.menu_bar_clicked)
 
-    # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
+        # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
 
-    def save_project(self):
-        file_name, _ = QFileDialog.getSaveFileName(self, "Save Project", "", "Project Files (*.proj);;All Files (*)")
-        if file_name:
-            with open(file_name, 'wb') as f:
-                for item in self.scene.items():
-                    pickle.dump(item, f)
-            f.close()
+    def save_file(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'Pickle Files (*.pkl)')
+        if file_path:
+            try:
+                with open(file_path, 'wb') as file:
+                    pickle.dump(self.scene.items(), file)
+            except Exception as e:
+                print(f"An error occurred while loading the file: {e}")
+
+    def load_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, 'Open File', '', 'Pickle Files (*.pkl)')
+        if file_path:
+            try:
+                with open(file_path, 'rb') as file:
+                    items = pickle.load(file)
+
+                    for item in items:
+                        # Создаем каждый элемент из pickle и добавляем в сцену
+                        self.scene.addItem(item)
+            except Exception as e:
+                print(f"An error occurred while loading the file: {e}")
 
     def create_tool_bar(self):
         battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
@@ -102,13 +131,46 @@ class Project(QMainWindow):
 
         self.toolbar.actionTriggered.connect(self.tool_bar_clicked)
 
-    @QtCore.pyqtSlot()
-    def menu_bar_clicked(self):
-        action = self.sender()
+    def undo(self):
+        if self.scene.items():
+            last = self.scene.items()
+            if isinstance(last[0], ControlPoint):
+                self.for_redo += last[0:3]
+                self.scene.removeItem(last[0] and last[1] and last[2])
+            elif isinstance(last[0], Connection):
+                self.for_redo += last[0:1]
+                for item in self.scene.items():
+                    if isinstance(item, Connection) and item == last[0]:
+                        item.delete_connection()
+                        self.scene.start_p.removeLine(item)
+                        self.scene.end_p.removeLine(item)
+                        self.scene.removeItem(last[0])
+
+    def redo(self):
+        if self.for_redo:
+            if isinstance(self.for_redo[0], ControlPoint):
+                rev_redo = self.for_redo[::-1]
+                for item in rev_redo:
+                    if isinstance(item, CustomItem) and item == rev_redo[0]:
+                        self.scene.addItem(item)
+                del rev_redo[0:3]
+                self.for_redo = rev_redo[::-1]
+            elif isinstance(self.for_redo[0], Connection):
+                for item in self.for_redo:
+                    if isinstance(item, Connection) and item == self.for_redo[0]:
+                        item.setEnd(self.scene.end_p)
+                        self.scene.start_p.addLine(item)
+                        self.scene.end_p.addLine(item)
+
+    def menu_bar_clicked(self, action):
         if action.text() == "Save":
-            self.save_project()
-        elif action.tex() == "Open":
-            pass
+            self.save_file()
+        elif action.text() == "Open":
+            self.load_file()
+        elif action.text() == "Undo":
+            self.undo()
+        elif action.text() == "Redo":
+            self.redo()
 
     def tool_bar_clicked(self, btn):
         if btn.text() == "Lamp":
@@ -145,6 +207,30 @@ class Project(QMainWindow):
 
 class Scene(QtWidgets.QGraphicsScene):
     startItem = newConnection = None
+
+    def save_to_file(self, file_path):
+        items_data = []
+        for item in self.items():
+            item_data = {
+                'type': type(item).__name__,
+                'pos': (item.scenePos().x(), item.scenePos().y()),
+            }
+            items_data.append(item_data)
+
+        with open(file_path, 'wb') as file:
+            pickle.dump(items_data, file)
+
+    def load_from_file(self, file_path):
+        try:
+            with open(file_path, 'rb') as file:
+                items_data = pickle.load(file)
+                for item_data in items_data:
+                    item_type = globals()[item_data['type']]
+                    item = item_type(self)  # Передаем 'parent' в качестве аргумента
+                    item.setPos(QPointF(item_data['pos'][0], item_data['pos'][1]))
+                    self.addItem(item)
+        except Exception as e:
+            print(f"An error occurred while loading the file: {e}")
 
     def controlPointAt(self, pos):
         mask = QPainterPath()
@@ -184,14 +270,16 @@ class Scene(QtWidgets.QGraphicsScene):
         if self.newConnection:
             item = self.controlPointAt(event.scenePos())
             if item and item != self.startItem:
+                self.start_p = self.startItem
+                self.end_p = item
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
-                    print("BAZAR", self.newConnection.add_connection())
+                    self.newConnection.add_connection()
                 else:
                     # delete the connection if it exists; remove the following
                     # line if this feature is not required
-                    print("VOKZAL", self.newConnection.delete_connection())
+                    self.newConnection.delete_connection()
                     item.removeLine(self.newConnection)
                     self.startItem.removeLine(self.newConnection)
                     self.removeItem(self.newConnection)
@@ -240,14 +328,13 @@ class Connection(QtWidgets.QGraphicsLineItem):
                             if item2.connect_minus == self.end:
                                 item.wire_connection_plus.append(item2.name)
                                 item2.wire_connection_minus.append(item.name)
-                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
+                                return item2.connect_minus
                 elif item.connect_minus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_plus == self.end:
                                 item.wire_connection_minus.append(item2.name)
                                 item2.wire_connection_plus.append(item.name)
-                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
 
     def delete_connection(self):
         for item in self.scene().items():
@@ -258,14 +345,14 @@ class Connection(QtWidgets.QGraphicsLineItem):
                             if item2.connect_minus == self.end:
                                 item.wire_connection_plus.remove(item2.name)
                                 item2.wire_connection_minus.remove(item.name)
-                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
                 elif item.connect_minus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_plus == self.end:
                                 item.wire_connection_minus.remove(item2.name)
                                 item2.wire_connection_plus.remove(item.name)
-                                return item, item.wire_connection_plus, item.wire_connection_minus, item2, item2.wire_connection_plus, item2.wire_connection_minus
+                else:
+                    print('Net')
 
 
 class ControlPoint(QtWidgets.QGraphicsEllipseItem):
@@ -275,6 +362,13 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
         self.lines = []
         # this flag **must** be set after creating self.lines!
         self.setFlags(self.ItemSendsScenePositionChanges)
+
+    def __getstate__(self) -> dict:  # Как мы будем "сохранять" класс
+        state = {"onLeft": self.onLeft}
+        return state
+
+    def __setstate__(self, state: dict):  # Как мы будем восстанавливать класс из байтов
+        self.onLeft = state["onLeft"]
 
     def addLine(self, lineItem):
         for existing in self.lines:
@@ -301,7 +395,7 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
 class CustomItem(QtWidgets.QGraphicsPixmapItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, parent)
-
+        self.pixmap = pixmap
         self.connect_minus = None
         self.connect_plus = None
         self.setFlags(self.ItemIsMovable)
@@ -309,6 +403,13 @@ class CustomItem(QtWidgets.QGraphicsPixmapItem):
         self.wire_connection_plus = []
         self.wire_connection_minus = []
         self.create(minus, plus, pixmap)
+
+    def __getstate__(self) -> dict:  # Как мы будем "сохранять" класс
+        state = {"pixmap": Pickable_QPixmap(self.pixmap)}
+        return state
+
+    def __setstate__(self, state: dict):  # Как мы будем восстанавливать класс из байтов
+        self.pixmap = state["pixmap"]
 
     def create(self, minus, plus, pixmap):
         for onLeft, create in enumerate((minus, plus)):
@@ -333,6 +434,12 @@ class Battery(CustomItem):
         super().__init__(pixmap, minus, plus, parent)
         self.name = "Battery"
 
+    def __getstate__(self) -> dict:  # Как мы будем "сохранять" класс
+        state = {"pixmap": Pickable_QPixmap(self.pixmap)}
+        return state
+
+    def __setstate__(self, state: dict):  # Как мы будем восстанавливать класс из байтов
+        self.pixmap = state["pixmap"]
 
 class Lamp(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
@@ -404,12 +511,12 @@ def include(scene, on):
     if not on:
         for item in scene.items():
             if isinstance(item, Lamp):
-                if "Battery" or "Accumulator" in item.wire_connection_plus and "Battery" or "Accumulator" or "Key" in \
-                        item.wire_connection_minus:
+                if any(x in item.wire_connection_plus for x in ["Battery", "Accumulator"]) and \
+                        any(x in item.wire_connection_minus for x in ["Battery", "Accumulator", "Key"]):
                     item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
             if isinstance(item, Fan):
-                if "Battery" or "Accumulator" in item.wire_connection_plus and "Battery" or "Accumulator" or "Key" in \
-                        item.wire_connection_minus:
+                if any(x in item.wire_connection_plus for x in ["Battery", "Accumulator"]) and \
+                        any(x in item.wire_connection_minus for x in ["Battery", "Accumulator", "Key"]):
                     item.level(item)
                     item.start()
     elif on:
@@ -418,3 +525,18 @@ def include(scene, on):
                 item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
             if isinstance(item, Fan):
                 item.stop()
+
+
+class Pickable_QPixmap(QPixmap):
+    def __reduce__(self):
+        return type(self), (), self.__getstate__()
+
+    def __getstate__(self):
+        ba = QtCore.QByteArray()
+        stream = QtCore.QDataStream(ba, QtCore.QIODevice.WriteOnly)
+        stream << self
+        return ba
+
+    def __setstate__(self, ba):
+        stream = QtCore.QDataStream(ba, QtCore.QIODevice.ReadOnly)
+        stream >> self
