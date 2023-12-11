@@ -51,12 +51,7 @@ class Project(QMainWindow):
         if btn.text() == "Yes":
             sys.exit()
         elif btn.text() == "Save":
-            file = QFileDialog.getSaveFileName(self)[0]
-            try:
-                f = open(file, 'w')
-                f.write(file)
-            except FileNotFoundError:
-                print("No such file")
+            pass
 
     def create_menu_bar(self):
         self.menuBar = QMenuBar(self)
@@ -65,7 +60,9 @@ class Project(QMainWindow):
         fileMenu = QMenu("&File", self)
         self.menuBar.addMenu(fileMenu)
         open_file = QAction('Open', self)
+        open_file.setIcon(QIcon('Menu/open.png'))
         save_file = QAction('Save', self)
+        save_file.setIcon(QIcon('Menu/save.png'))
         save_file_as = QAction('Save as', self)
         fileMenu.addAction(open_file)
         fileMenu.addAction(save_file)
@@ -75,8 +72,10 @@ class Project(QMainWindow):
         editMenu = QMenu("&Edit", self)
         self.menuBar.addMenu(editMenu)
         undo = QAction('Undo', self)
+        undo.setIcon(QIcon('Menu/undo.png'))
         undo.setShortcut(QKeySequence.Undo)
         redo = QAction('Redo', self)
+        redo.setIcon(QIcon('Menu/redo.png'))
         redo.setShortcut('Ctrl+Shift+Z')
         editMenu.addAction(undo)
         editMenu.addAction(redo)
@@ -85,26 +84,71 @@ class Project(QMainWindow):
         # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
 
     def save_file(self):
+        items_data = []
+        for item in self.scene.items():
+            if isinstance(item, CustomItem):
+                item_data = {
+                    'type': type(item).__name__,
+                    'pos': (item.scenePos().x(), item.scenePos().y()),
+                    'connect_minus': item.wire_connection_minus,
+                    'connect_plus': item.wire_connection_plus
+                }
+                items_data.append(item_data)
+
+        with open('save/save_file.pkl', 'wb') as file:
+            pickle.dump(items_data, file)
+
+    def save_file_as(self):
         file_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'Pickle Files (*.pkl)')
         if file_path:
-            try:
-                with open(file_path, 'wb') as file:
-                    pickle.dump(self.scene.items(), file)
-            except Exception as e:
-                print(f"An error occurred while loading the file: {e}")
+            items_data = []
+            for item in self.scene.items():
+                if isinstance(item, CustomItem):
+                    item_data = {
+                        'type': type(item).__name__,
+                        'pos': (item.scenePos().x(), item.scenePos().y()),
+                        'connect_minus': item.wire_connection_minus,
+                        'connect_plus': item.wire_connection_plus
+                    }
+                    items_data.append(item_data)
+
+            with open(file_path, 'wb') as file:
+                pickle.dump(items_data, file)
 
     def load_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Open File', '', 'Pickle Files (*.pkl)')
         if file_path:
             try:
                 with open(file_path, 'rb') as file:
-                    items = pickle.load(file)
+                    items_data = pickle.load(file)
 
-                    for item in items:
-                        # Создаем каждый элемент из pickle и добавляем в сцену
-                        self.scene.addItem(item)
+                for item_data in items_data:
+                    item_name = QtWidgets.QAction(item_data['type'])
+                    self.tool_bar_clicked(item_name)
+                    for item in self.scene.items():
+                        if isinstance(item, CustomItem) and type(item).__name__ == item_data['type']:
+                            if item.pos().x != item_data['pos'][0] and item.pos().y() != item_data['pos'][1]:
+                                item.setPos(QPointF(item_data['pos'][0], item_data['pos'][1]))
+                                item.wire_connection_plus = item_data['connect_plus']
+                                item.wire_connection_minus = item_data['connect_minus']
+                self.recovery_connect()
             except Exception as e:
                 print(f"An error occurred while loading the file: {e}")
+
+    def recovery_connect(self):
+        for item in self.scene.items():
+            if isinstance(item, CustomItem) and (item.wire_connection_minus or item.wire_connection_plus):
+                if item.wire_connection_minus:
+                    minus = item.connect_minus
+                    for item2 in self.scene.items():
+                        if isinstance(item2, CustomItem) and item.name in item2.wire_connection_plus:
+                                plus = item2.connect_plus
+                                newConnection = Connection(plus, plus.pos())
+                                newConnection.setEnd(minus)
+                                self.scene.addItem(newConnection)
+                                minus.addLine(newConnection)
+                                plus.addLine(newConnection)
+                                newConnection.add_connection()
 
     def create_tool_bar(self):
         battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
@@ -142,8 +186,10 @@ class Project(QMainWindow):
                 for item in self.scene.items():
                     if isinstance(item, Connection) and item == last[0]:
                         item.delete_connection()
-                        self.scene.start_p.removeLine(item)
-                        self.scene.end_p.removeLine(item)
+                        start = item.start
+                        end = item.end
+                        start.removeLine(item)
+                        end.removeLine(item)
                         self.scene.removeItem(last[0])
 
     def redo(self):
@@ -156,15 +202,25 @@ class Project(QMainWindow):
                 del rev_redo[0:3]
                 self.for_redo = rev_redo[::-1]
             elif isinstance(self.for_redo[0], Connection):
-                for item in self.for_redo:
+                for item in self.for_redo[::-1]:
                     if isinstance(item, Connection) and item == self.for_redo[0]:
-                        item.setEnd(self.scene.end_p)
-                        self.scene.start_p.addLine(item)
-                        self.scene.end_p.addLine(item)
+                        try:
+                            start = item.start
+                            end = item.end
+                            item.setEnd(end)
+                            self.scene.addItem(item)
+                            start.addLine(item)
+                            end.addLine(item)
+                            item.add_connection()
+                            del self.for_redo[0]
+                        except Exception as e:
+                            print(f"An error occurred while redo: {e}")
 
     def menu_bar_clicked(self, action):
         if action.text() == "Save":
             self.save_file()
+        elif action.text() == "Save":
+            self.save_file_as()
         elif action.text() == "Open":
             self.load_file()
         elif action.text() == "Undo":
@@ -208,30 +264,6 @@ class Project(QMainWindow):
 class Scene(QtWidgets.QGraphicsScene):
     startItem = newConnection = None
 
-    def save_to_file(self, file_path):
-        items_data = []
-        for item in self.items():
-            item_data = {
-                'type': type(item).__name__,
-                'pos': (item.scenePos().x(), item.scenePos().y()),
-            }
-            items_data.append(item_data)
-
-        with open(file_path, 'wb') as file:
-            pickle.dump(items_data, file)
-
-    def load_from_file(self, file_path):
-        try:
-            with open(file_path, 'rb') as file:
-                items_data = pickle.load(file)
-                for item_data in items_data:
-                    item_type = globals()[item_data['type']]
-                    item = item_type(self)  # Передаем 'parent' в качестве аргумента
-                    item.setPos(QPointF(item_data['pos'][0], item_data['pos'][1]))
-                    self.addItem(item)
-        except Exception as e:
-            print(f"An error occurred while loading the file: {e}")
-
     def controlPointAt(self, pos):
         mask = QPainterPath()
         mask.setFillRule(QtCore.Qt.WindingFill)
@@ -270,8 +302,6 @@ class Scene(QtWidgets.QGraphicsScene):
         if self.newConnection:
             item = self.controlPointAt(event.scenePos())
             if item and item != self.startItem:
-                self.start_p = self.startItem
-                self.end_p = item
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
@@ -363,13 +393,6 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
         # this flag **must** be set after creating self.lines!
         self.setFlags(self.ItemSendsScenePositionChanges)
 
-    def __getstate__(self) -> dict:  # Как мы будем "сохранять" класс
-        state = {"onLeft": self.onLeft}
-        return state
-
-    def __setstate__(self, state: dict):  # Как мы будем восстанавливать класс из байтов
-        self.onLeft = state["onLeft"]
-
     def addLine(self, lineItem):
         for existing in self.lines:
             if existing.controlPoints() == lineItem.controlPoints():
@@ -404,13 +427,6 @@ class CustomItem(QtWidgets.QGraphicsPixmapItem):
         self.wire_connection_minus = []
         self.create(minus, plus, pixmap)
 
-    def __getstate__(self) -> dict:  # Как мы будем "сохранять" класс
-        state = {"pixmap": Pickable_QPixmap(self.pixmap)}
-        return state
-
-    def __setstate__(self, state: dict):  # Как мы будем восстанавливать класс из байтов
-        self.pixmap = state["pixmap"]
-
     def create(self, minus, plus, pixmap):
         for onLeft, create in enumerate((minus, plus)):
             if create:
@@ -434,12 +450,6 @@ class Battery(CustomItem):
         super().__init__(pixmap, minus, plus, parent)
         self.name = "Battery"
 
-    def __getstate__(self) -> dict:  # Как мы будем "сохранять" класс
-        state = {"pixmap": Pickable_QPixmap(self.pixmap)}
-        return state
-
-    def __setstate__(self, state: dict):  # Как мы будем восстанавливать класс из байтов
-        self.pixmap = state["pixmap"]
 
 class Lamp(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
@@ -525,18 +535,3 @@ def include(scene, on):
                 item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
             if isinstance(item, Fan):
                 item.stop()
-
-
-class Pickable_QPixmap(QPixmap):
-    def __reduce__(self):
-        return type(self), (), self.__getstate__()
-
-    def __getstate__(self):
-        ba = QtCore.QByteArray()
-        stream = QtCore.QDataStream(ba, QtCore.QIODevice.WriteOnly)
-        stream << self
-        return ba
-
-    def __setstate__(self, ba):
-        stream = QtCore.QDataStream(ba, QtCore.QIODevice.ReadOnly)
-        stream >> self

@@ -1,5 +1,5 @@
 import pickle
 import json
-with open('save/gfs.json', 'r') as f:
-        data = json.load(f)
+with open('save/sadsa.pkl', 'rb') as f:
+        data = pickle.load(f)
         print(data)
