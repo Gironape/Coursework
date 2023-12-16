@@ -6,12 +6,14 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 
+id_elem = 0
+
 
 class Project(QMainWindow):
     def __init__(self):
         super(Project, self).__init__()
+        self.file_save_path = None
         self.toolbar = QToolBar("My main toolbar")
-        self.buttons()
         self.ext = None
         self.btn_exit = None
         self.menuBar = None
@@ -29,29 +31,22 @@ class Project(QMainWindow):
         self.view.mouseDoubleClickEvent = self.mouseDoubleClickEvent
         self.for_redo = []
 
-    def buttons(self):
-        self.btn_exit = QPushButton(self)
-        self.btn_exit.setGeometry(150, 200, 300, 30)
-        self.btn_exit.setText("Выход")
-        self.btn_exit.setShortcut("Escape")
-        self.btn_exit.clicked.connect(self.exit)
-
-    def exit(self):
+    def closeEvent(self, event):
         ext = QMessageBox()
         ext.setWindowTitle("Выход")
         ext.setText("Вы действительно хотите выйти?")
         ext.setIcon(QMessageBox.Question)
         ext.setWindowIcon(QIcon('Tape2.jpg'))
-        ext.setStandardButtons(QMessageBox.Save | QMessageBox.Yes | QMessageBox.No)
+        ext.setStandardButtons(QMessageBox.Save | QMessageBox.Yes | QMessageBox.Close)
         ext.setInformativeText("Сохраните проект перед выходом")
-        ext.buttonClicked.connect(self.press)
-        ext.exec_()
-
-    def press(self, btn):
-        if btn.text() == "Yes":
-            sys.exit()
-        elif btn.text() == "Save":
-            pass
+        result = ext.exec_()
+        if result == QMessageBox.Save:
+            self.save_file()
+            event.accept()
+        elif result == QMessageBox.Yes:
+            event.accept()
+        else:
+            event.ignore()
 
     def create_menu_bar(self):
         self.menuBar = QMenuBar(self)
@@ -77,29 +72,25 @@ class Project(QMainWindow):
         redo = QAction('Redo', self)
         redo.setIcon(QIcon('Menu/redo.png'))
         redo.setShortcut('Ctrl+Shift+Z')
+        clear = QAction('Clear all', self)
+        clear.setIcon(QIcon('Menu/clear.png'))
         editMenu.addAction(undo)
         editMenu.addAction(redo)
+        editMenu.addAction(clear)
         editMenu.triggered[QAction].connect(self.menu_bar_clicked)
 
         # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
 
+    def save_from_file(self):
+        self.file_save_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'Pickle Files (*.pkl)')
+        return self.file_save_path
+
     def save_file(self):
-        items_data = []
-        for item in self.scene.items():
-            if isinstance(item, CustomItem):
-                item_data = {
-                    'type': type(item).__name__,
-                    'pos': (item.scenePos().x(), item.scenePos().y()),
-                    'connect_minus': item.wire_connection_minus,
-                    'connect_plus': item.wire_connection_plus
-                }
-                items_data.append(item_data)
+        if self.file_save_path:
+            file_path = self.file_save_path
+        else:
+            file_path = 'save/save_file.pkl'
 
-        with open('save/save_file.pkl', 'wb') as file:
-            pickle.dump(items_data, file)
-
-    def save_file_as(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'Pickle Files (*.pkl)')
         if file_path:
             items_data = []
             for item in self.scene.items():
@@ -108,15 +99,25 @@ class Project(QMainWindow):
                         'type': type(item).__name__,
                         'pos': (item.scenePos().x(), item.scenePos().y()),
                         'connect_minus': item.wire_connection_minus,
-                        'connect_plus': item.wire_connection_plus
+                        'connect_plus': item.wire_connection_plus,
+                        'id_plus': item.id_connection_plus,
+                        'id_minus': item.id_connection_minus,
+                        'id': item.id
                     }
                     items_data.append(item_data)
 
             with open(file_path, 'wb') as file:
                 pickle.dump(items_data, file)
+        self.file_save_path = None
+
+    def load_from_file(self):
+        self.file_path, _ = QFileDialog.getOpenFileName(self, 'Open File', '', 'Pickle Files (*.pkl)')
+        return self.file_path
 
     def load_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, 'Open File', '', 'Pickle Files (*.pkl)')
+        global id_elem
+        id_elem = 0
+        file_path = self.file_path
         if file_path:
             try:
                 with open(file_path, 'rb') as file:
@@ -127,33 +128,33 @@ class Project(QMainWindow):
                     self.tool_bar_clicked(item_name)
                     for item in self.scene.items():
                         if isinstance(item, CustomItem) and type(item).__name__ == item_data['type']:
-                            if item.pos().x != item_data['pos'][0] and item.pos().y() != item_data['pos'][1]:
+                            if not item.wire_connection_plus and not item.wire_connection_minus:
                                 item.setPos(QPointF(item_data['pos'][0], item_data['pos'][1]))
                                 item.wire_connection_plus = item_data['connect_plus']
                                 item.wire_connection_minus = item_data['connect_minus']
+                                item.id_connection_plus = item_data['id_plus']
+                                item.id_connection_minus = item_data['id_minus']
+                                item.id = item_data['id']
                 self.recovery_connect()
             except Exception as e:
                 print(f"An error occurred while loading the file: {e}")
 
     def recovery_connect(self):
         for item in self.scene.items():
-            if isinstance(item, CustomItem) and (item.wire_connection_minus or item.wire_connection_plus):
+            if isinstance(item, CustomItem) and item.wire_connection_minus:
                 if item.wire_connection_minus:
                     minus = item.connect_minus
                     for item2 in self.scene.items():
-                        if isinstance(item2, CustomItem) and item.name in item2.wire_connection_plus:
-                                plus = item2.connect_plus
-                                newConnection = Connection(plus, plus.pos())
-                                newConnection.setEnd(minus)
-                                self.scene.addItem(newConnection)
-                                minus.addLine(newConnection)
-                                plus.addLine(newConnection)
-                                newConnection.add_connection()
+                        if isinstance(item2, CustomItem) and item.id in item2.id_connection_plus:
+                            plus = item2.connect_plus
+                            newConnection = Connection(plus, plus.pos())
+                            newConnection.setEnd(minus)
+                            self.scene.addItem(newConnection)
+                            minus.addLine(newConnection)
+                            plus.addLine(newConnection)
 
     def create_tool_bar(self):
         battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
-        # tools.setShortcut('Ctrl+Q') Нужно для понимания
-        # tools.triggered.connect(qApp.quit)
         key = QAction(QIcon('Tools/key.png'), 'Key', self)
         lamp = QAction(QIcon('Tools/lamp_off.png'), 'Lamp', self)
         self.start_stop = QAction(QIcon('Tools/start.png'), 'Start/Stop', self)
@@ -216,19 +217,31 @@ class Project(QMainWindow):
                         except Exception as e:
                             print(f"An error occurred while redo: {e}")
 
+    def clear_all(self):
+        if self.scene.items():
+            self.scene.clear()
+            global id_elem
+            id_elem = 0
+
     def menu_bar_clicked(self, action):
         if action.text() == "Save":
             self.save_file()
-        elif action.text() == "Save":
-            self.save_file_as()
+        elif action.text() == "Save as":
+            self.save_from_file()
+            self.save_file()
         elif action.text() == "Open":
+            self.load_from_file()
             self.load_file()
         elif action.text() == "Undo":
             self.undo()
         elif action.text() == "Redo":
             self.redo()
+        elif action.text() == 'Clear all':
+            self.clear_all()
 
     def tool_bar_clicked(self, btn):
+        global id_elem
+        id_elem += 1
         if btn.text() == "Lamp":
             lamp = QPixmap('Tools/Lamp_off.png')
             lamp_item = Lamp(lamp.scaled(60, 60))
@@ -358,6 +371,8 @@ class Connection(QtWidgets.QGraphicsLineItem):
                             if item2.connect_minus == self.end:
                                 item.wire_connection_plus.append(item2.name)
                                 item2.wire_connection_minus.append(item.name)
+                                item.id_connection_plus.append(item2.id)
+                                item2.id_connection_minus.append(item.id)
                                 return item2.connect_minus
                 elif item.connect_minus == self.start:
                     for item2 in self.scene().items():
@@ -365,6 +380,8 @@ class Connection(QtWidgets.QGraphicsLineItem):
                             if item2.connect_plus == self.end:
                                 item.wire_connection_minus.append(item2.name)
                                 item2.wire_connection_plus.append(item.name)
+                                item.id_connection_minus.append(item2.id)
+                                item2.id_connection_plus.append(item.id)
 
     def delete_connection(self):
         for item in self.scene().items():
@@ -375,12 +392,16 @@ class Connection(QtWidgets.QGraphicsLineItem):
                             if item2.connect_minus == self.end:
                                 item.wire_connection_plus.remove(item2.name)
                                 item2.wire_connection_minus.remove(item.name)
+                                item.id_connection_plus.remove(item2.id)
+                                item2.id_connection_minus.remove(item.id)
                 elif item.connect_minus == self.start:
                     for item2 in self.scene().items():
                         if isinstance(item2, CustomItem):
                             if item2.connect_plus == self.end:
                                 item.wire_connection_minus.remove(item2.name)
                                 item2.wire_connection_plus.remove(item.name)
+                                item.id_connection_minus.remove(item2.id)
+                                item2.id_connection_plus.remove(item.id)
                 else:
                     print('Net')
 
@@ -423,8 +444,11 @@ class CustomItem(QtWidgets.QGraphicsPixmapItem):
         self.connect_plus = None
         self.setFlags(self.ItemIsMovable)
         self.name = "None"
+        self.id = id_elem
         self.wire_connection_plus = []
         self.wire_connection_minus = []
+        self.id_connection_plus = []
+        self.id_connection_minus = []
         self.create(minus, plus, pixmap)
 
     def create(self, minus, plus, pixmap):
@@ -449,13 +473,14 @@ class Battery(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
         self.name = "Battery"
+        print(self.name, self.id)
 
 
 class Lamp(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
-
         self.name = "Lamp"
+        print(self.name, self.id)
 
 
 class Key(CustomItem):
@@ -512,9 +537,9 @@ class Fan(CustomItem):
 
     def level(self, item):
         if "Battery" in item.wire_connection_plus and "Battery" in item.wire_connection_minus:
-            self.lvl = 3
-        else:
             self.lvl = 1
+        else:
+            self.lvl = 3
 
 
 def include(scene, on):

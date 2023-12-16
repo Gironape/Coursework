@@ -37,6 +37,7 @@ class MainWindow(QWidget):
         self.btn_load = QPushButton(self)
         self.btn_load.setGeometry(150, 250, 300, 30)
         self.btn_load.setText("Загрузить сохранение")
+        self.btn_load.clicked.connect(self.load)
 
         self.btn_exit = QPushButton(self)
         self.btn_exit.setGeometry(150, 300, 300, 30)
@@ -47,6 +48,13 @@ class MainWindow(QWidget):
         self.stt = Project()
         self.stt.show()
         self.close()
+
+    def load(self):
+        self.ld = Project()
+        if self.ld.load_from_file():
+            self.ld.show()
+            self.ld.load_file()
+            self.close()
 
 
 if __name__ == "__main__":
