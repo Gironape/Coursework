@@ -1,10 +1,11 @@
 import pickle
-import sys
+import random
 
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import *
-from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QMediaPlaylist
+from PyQt5.QtWidgets import *
 
 id_elem = 0
 
@@ -14,9 +15,9 @@ class Project(QMainWindow):
         super(Project, self).__init__()
         self.file_save_path = None
         self.toolbar = QToolBar("My main toolbar")
-        self.ext = None
-        self.btn_exit = None
         self.menuBar = None
+        self.start_stop = None
+        self.controlbar = QToolBar("My main controlbar")
         self.setWindowIcon(QIcon('Tape2.jpg'))
         self.setFont(QFont('Arial', 20))
         self.setStyleSheet("background-color:;")
@@ -24,11 +25,9 @@ class Project(QMainWindow):
         self.setGeometry(0, 0, 1920, 1080)
         self.create_menu_bar()
         self.create_tool_bar()
-        self.setAcceptDrops(True)
         self.scene = Scene()
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
-        self.view.mouseDoubleClickEvent = self.mouseDoubleClickEvent
         self.for_redo = []
 
     def closeEvent(self, event):
@@ -157,9 +156,9 @@ class Project(QMainWindow):
         battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
         key = QAction(QIcon('Tools/key.png'), 'Key', self)
         lamp = QAction(QIcon('Tools/lamp_off.png'), 'Lamp', self)
-        self.start_stop = QAction(QIcon('Tools/start.png'), 'Start/Stop', self)
         fan = QAction(QIcon('Tools/fan.gif'), 'Fan', self)
         accumulator = QAction(QIcon('Tools/accumulator.png'), 'Accumulator', self)
+        speaker = QAction(QIcon('Tools/speaker.png'), 'Speaker', self)
 
         self.toolbar = self.addToolBar('tools')
         self.toolbar.addAction(battery)
@@ -167,14 +166,28 @@ class Project(QMainWindow):
         self.toolbar.addAction(lamp)
         self.toolbar.addAction(accumulator)
         self.toolbar.addAction(fan)
+        self.toolbar.addAction(speaker)
         separator = QLabel('', self)
         separator.setFixedWidth(700)  # Устанавливаем фиксированную ширину разделителя
         self.toolbar.addWidget(separator)
-        self.toolbar.addAction(self.start_stop)
         self.toolbar.setFixedHeight(100)
         self.toolbar.setIconSize(QSize(50, 50))
 
         self.toolbar.actionTriggered.connect(self.tool_bar_clicked)
+
+    def create_control_bar(self):
+        self.start_stop = QAction(QIcon('Controls/start.png'), 'Start/Stop', self)
+        next_track = QAction(QIcon('Controls/next.png'), 'Next melody', self)
+        prev = QAction(QIcon('Controls/prev.png'), 'Previous melody', self)
+        rand = QAction(QIcon('Controls/random.png'), 'Random melody', self)
+        self.controlbar = self.addToolBar('controls')
+        self.controlbar.addAction(self.start_stop)
+        self.controlbar.addAction(prev)
+        self.controlbar.addAction(next_track)
+        self.controlbar.addAction(rand)
+        self.controlbar.setFixedHeight(100)
+        self.controlbar.setIconSize(QSize(50, 50))
+        self.controlbar.actionTriggered.connect(self.control_bar_clicked)
 
     def undo(self):
         if self.scene.items():
@@ -192,6 +205,8 @@ class Project(QMainWindow):
                         start.removeLine(item)
                         end.removeLine(item)
                         self.scene.removeItem(last[0])
+            if not self.scene.items():
+                self.removeToolBar(self.controlbar)
 
     def redo(self):
         if self.for_redo:
@@ -222,6 +237,7 @@ class Project(QMainWindow):
             self.scene.clear()
             global id_elem
             id_elem = 0
+            self.removeToolBar(self.controlbar)
 
     def menu_bar_clicked(self, action):
         if action.text() == "Save":
@@ -242,6 +258,9 @@ class Project(QMainWindow):
     def tool_bar_clicked(self, btn):
         global id_elem
         id_elem += 1
+        if not self.scene.items():
+            self.addToolBarBreak()
+            self.create_control_bar()
         if btn.text() == "Lamp":
             lamp = QPixmap('Tools/Lamp_off.png')
             lamp_item = Lamp(lamp.scaled(60, 60))
@@ -254,16 +273,6 @@ class Project(QMainWindow):
             battery = QPixmap('Tools/Battery.png')
             battery_item = Battery(battery.scaled(60, 60))
             self.scene.addItem(battery_item)
-        elif btn.text() == "Start/Stop":
-            if self.start_stop.property("state") is None or self.start_stop.property("state") == "on":
-                self.start_stop.setIcon(QIcon('Tools/stop.png'))
-                self.start_stop.setProperty("state", "off")
-                include(self.scene, on=False)
-            else:
-                self.start_stop.setIcon(QIcon('Tools/start.png'))
-                self.start_stop.setProperty("state", "on")
-                include(self.scene, on=True)
-                print("Stop")
         elif btn.text() == "Fan":
             fan = QPixmap('Tools/fan.gif')
             self.fan_item = Fan(fan.scaled(60, 60), gif_path='Tools/fan.gif')
@@ -272,6 +281,46 @@ class Project(QMainWindow):
             accumulator = QPixmap('Tools/accumulator.png')
             accumulator_item = Accumulator(accumulator.scaled(70, 60))
             self.scene.addItem(accumulator_item)
+        elif btn.text() == "Speaker":
+            speaker = QPixmap('Tools/speaker.png')
+            speaker_item = Speaker(speaker.scaled(60, 60))
+            self.scene.addItem(speaker_item)
+
+    def control_bar_clicked(self, button):
+        if button.text() == "Start/Stop":
+            self.start_stop_button()
+        if button.text() == "Next melody":
+            self.checker_action(True)
+        if button.text() == "Previous melody":
+            self.checker_action(False)
+        if button.text() == "Random melody":
+            self.rand_melody()
+
+    def checker_action(self, switch):
+        for item in self.scene. items():
+            if isinstance(item, Speaker) and switch:
+                item.next_melody()
+            elif isinstance(item, Speaker) and not switch:
+                item.prev_melody()
+
+    def rand_melody(self):
+        for item in self.scene. items():
+            if isinstance(item, Speaker):
+                item.random_melody()
+
+    def start_stop_button(self):
+        if self.start_stop.property("state") is None or self.start_stop.property("state") == "on":
+            self.start_stop.setIcon(QIcon('Controls/stop.png'))
+            self.start_stop.setProperty("state", "off")
+            for item in self.scene.items():
+                if isinstance(item, CustomItem):
+                    include(item, on=False)
+        else:
+            self.start_stop.setIcon(QIcon('Controls/start.png'))
+            self.start_stop.setProperty("state", "on")
+            for item in self.scene.items():
+                if isinstance(item, CustomItem):
+                    include(item, on=True)
 
 
 class Scene(QtWidgets.QGraphicsScene):
@@ -473,7 +522,6 @@ class Battery(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
         self.name = "Battery"
-        print(self.name, self.id)
 
 
 class Lamp(CustomItem):
@@ -542,21 +590,73 @@ class Fan(CustomItem):
             self.lvl = 3
 
 
-def include(scene, on):
+class Speaker(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
+        super().__init__(pixmap, minus, plus, parent)
+        try:
+            self.name = "Speaker"
+            self.player = QMediaPlayer()
+            self.playlist = QMediaPlaylist()
+            self.play_list()
+            self.player.setPlaylist(self.playlist)  # Устанавливаем плейлист для плеера
+            self.position = self.player.position()  # Инициализируем позицию воспроизведения
+
+        except Exception as e:
+            print(f"An error occurred while initializing Speaker: {e}")
+
+    def play_audio(self):
+        self.player.setPosition(self.position)
+        self.player.play()
+
+    def stop_audio(self):
+        self.position = self.player.position()
+        self.player.stop()
+
+    def next_melody(self):
+        self.playlist.next()
+        self.position = 0
+        self.player.play()
+
+    def prev_melody(self):
+        self.playlist.previous()
+        self.position = 0
+        self.player.play()
+
+    def random_melody(self):
+        random_index = random.randint(0, self.playlist.mediaCount() - 1)
+        self.player.setMedia(self.playlist.media(random_index))
+        self.position = 0
+        self.player.play()
+
+    def play_list(self):
+        self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/1.mp3')))
+        self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/2.mp3')))
+        self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/3.mp3')))
+        self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/4.mp3')))
+        self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/5.mp3')))
+        self.playlist.setCurrentIndex(0)
+
+    def set_volume_down(self):
+        self.player.volume() - 10
+
+    def set_volume_up(self):
+        self.player.volume() + 10
+
+
+def include(item, on):
     if not on:
-        for item in scene.items():
+        if any(x in item.wire_connection_plus for x in ["Battery", "Accumulator"]) and \
+                any(x in item.wire_connection_minus for x in ["Battery", "Accumulator", "Key"]):
             if isinstance(item, Lamp):
-                if any(x in item.wire_connection_plus for x in ["Battery", "Accumulator"]) and \
-                        any(x in item.wire_connection_minus for x in ["Battery", "Accumulator", "Key"]):
-                    item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
-            if isinstance(item, Fan):
-                if any(x in item.wire_connection_plus for x in ["Battery", "Accumulator"]) and \
-                        any(x in item.wire_connection_minus for x in ["Battery", "Accumulator", "Key"]):
-                    item.level(item)
-                    item.start()
+                item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
+            elif isinstance(item, Fan):
+                item.start()
+            elif isinstance(item, Speaker):
+                item.play_audio()
     elif on:
-        for item in scene.items():
-            if isinstance(item, Lamp):
-                item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
-            if isinstance(item, Fan):
-                item.stop()
+        if isinstance(item, Lamp):
+            item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
+        elif isinstance(item, Fan):
+            item.stop()
+        elif isinstance(item, Speaker):
+            item.stop_audio()
