@@ -1,5 +1,7 @@
 import pickle
 import random
+import pyaudio
+import wave
 
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtCore import *
@@ -29,6 +31,7 @@ class Project(QMainWindow):
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
         self.for_redo = []
+        self.include_bool = None
 
     def closeEvent(self, event):
         ext = QMessageBox()
@@ -159,6 +162,7 @@ class Project(QMainWindow):
         fan = QAction(QIcon('Tools/fan.gif'), 'Fan', self)
         accumulator = QAction(QIcon('Tools/accumulator.png'), 'Accumulator', self)
         speaker = QAction(QIcon('Tools/speaker.png'), 'Speaker', self)
+        micro = QAction(QIcon('Tools/micro.png'), 'Microphone', self)
 
         self.toolbar = self.addToolBar('tools')
         self.toolbar.addAction(battery)
@@ -167,9 +171,7 @@ class Project(QMainWindow):
         self.toolbar.addAction(accumulator)
         self.toolbar.addAction(fan)
         self.toolbar.addAction(speaker)
-        separator = QLabel('', self)
-        separator.setFixedWidth(700)  # Устанавливаем фиксированную ширину разделителя
-        self.toolbar.addWidget(separator)
+        self.toolbar.addAction(micro)
         self.toolbar.setFixedHeight(100)
         self.toolbar.setIconSize(QSize(50, 50))
 
@@ -180,14 +182,27 @@ class Project(QMainWindow):
         next_track = QAction(QIcon('Controls/next.png'), 'Next melody', self)
         prev = QAction(QIcon('Controls/prev.png'), 'Previous melody', self)
         rand = QAction(QIcon('Controls/random.png'), 'Random melody', self)
+        rec = QAction(QIcon('Controls/recording.png'), 'Record', self)
+        listen = QAction(QIcon('Controls/listening.jpg'), 'Listen', self)
+        sld = QtWidgets.QSlider(QtCore.Qt.Horizontal, self)
+        sld.setFixedSize(100, 20)
+        sld.setValue(100)
+        separator = QLabel('', self)
+        separator.setFixedWidth(50)
+
         self.controlbar = self.addToolBar('controls')
         self.controlbar.addAction(self.start_stop)
         self.controlbar.addAction(prev)
         self.controlbar.addAction(next_track)
         self.controlbar.addAction(rand)
+        self.controlbar.addWidget(sld)
+        self.controlbar.addWidget(separator)
+        self.controlbar.addAction(rec)
+        self.controlbar.addAction(listen)
         self.controlbar.setFixedHeight(100)
         self.controlbar.setIconSize(QSize(50, 50))
         self.controlbar.actionTriggered.connect(self.control_bar_clicked)
+        sld.valueChanged.connect(self.slider_changed)
 
     def undo(self):
         if self.scene.items():
@@ -199,6 +214,7 @@ class Project(QMainWindow):
                 self.for_redo += last[0:1]
                 for item in self.scene.items():
                     if isinstance(item, Connection) and item == last[0]:
+                        self.check_include(item)
                         item.delete_connection()
                         start = item.start
                         end = item.end
@@ -207,6 +223,17 @@ class Project(QMainWindow):
                         self.scene.removeItem(last[0])
             if not self.scene.items():
                 self.removeToolBar(self.controlbar)
+
+    def check_include(self, item):
+        for item2 in self.scene.items():
+            if self.include_bool:
+                if isinstance(item2, CustomItem):
+                    if (item2.connect_plus in [item.start, item.end]) or (item2.connect_minus in
+                                                                          [item.start, item.end]):
+                        include(item2, self.scene, on=True)
+                        return
+            else:
+                return
 
     def redo(self):
         if self.for_redo:
@@ -285,28 +312,57 @@ class Project(QMainWindow):
             speaker = QPixmap('Tools/speaker.png')
             speaker_item = Speaker(speaker.scaled(60, 60))
             self.scene.addItem(speaker_item)
+        elif btn.text() == "Microphone":
+            micro = QPixmap('Tools/micro.png')
+            micro_item = Microphone(micro.scaled(60, 60))
+            self.scene.addItem(micro_item)
 
     def control_bar_clicked(self, button):
         if button.text() == "Start/Stop":
             self.start_stop_button()
-        if button.text() == "Next melody":
+        elif button.text() == "Next melody":
             self.checker_action(True)
-        if button.text() == "Previous melody":
+        elif button.text() == "Previous melody":
             self.checker_action(False)
-        if button.text() == "Random melody":
+        elif button.text() == "Random melody":
             self.rand_melody()
+        elif button.text() == "Record":
+            self.record_voice()
+        elif button.text() == "Listen":
+            self.listen_voice()
 
+    def record_voice(self):
+        for item in self.scene.items():
+            if isinstance(item, Microphone):
+                item.record_audio()
+
+    def listen_voice(self):
+        for item in self.scene.items():
+            if isinstance(item, Speaker):
+                item.listen_record()
     def checker_action(self, switch):
-        for item in self.scene. items():
-            if isinstance(item, Speaker) and switch:
+        for item in self.scene.items():
+            if isinstance(item, Speaker) and switch and self.include_bool:
                 item.next_melody()
-            elif isinstance(item, Speaker) and not switch:
+                return
+            elif isinstance(item, Speaker) and not switch and self.include_bool:
                 item.prev_melody()
+                return
+        self.message_for_speaker()
 
     def rand_melody(self):
-        for item in self.scene. items():
-            if isinstance(item, Speaker):
+        for item in self.scene.items():
+            if isinstance(item, Speaker) and self.include_bool:
                 item.random_melody()
+                return
+        self.message_for_speaker()
+
+    def slider_changed(self, value):
+        for item in self.scene.items():
+            if isinstance(item, Speaker) and self.include_bool:
+                item.set_volume(value)
+                return
+        self.message_for_speaker()
 
     def start_stop_button(self):
         if self.start_stop.property("state") is None or self.start_stop.property("state") == "on":
@@ -314,13 +370,27 @@ class Project(QMainWindow):
             self.start_stop.setProperty("state", "off")
             for item in self.scene.items():
                 if isinstance(item, CustomItem):
-                    include(item, on=False)
+                    self.include_bool = include(item, self.scene, on=False)
         else:
             self.start_stop.setIcon(QIcon('Controls/start.png'))
             self.start_stop.setProperty("state", "on")
             for item in self.scene.items():
                 if isinstance(item, CustomItem):
-                    include(item, on=True)
+                    self.include_bool = include(item, self.scene, on=True)
+
+    def message_for_speaker(self):
+        err = QMessageBox()
+        err.setWindowTitle("Информация")
+        err.setText("Данное действие пока не доступно")
+        err.setIcon(QMessageBox.Information)
+        err.setWindowIcon(QIcon('Tape2.jpg'))
+        err.setStandardButtons(QMessageBox.Close)
+        err.setInformativeText("Дополнительная информация")
+        err.setDetailedText('Данные инструменты предназначены для управления динамиком. Чтобы их использовать,'
+                            ' подключите ваш динамик в сеть и нажмите кнопку "Start"')
+        err.exec_()
+        if QMessageBox.Close:
+            err.close()
 
 
 class Scene(QtWidgets.QGraphicsScene):
@@ -363,7 +433,8 @@ class Scene(QtWidgets.QGraphicsScene):
     def mouseReleaseEvent(self, event):
         if self.newConnection:
             item = self.controlPointAt(event.scenePos())
-            if item and item != self.startItem:
+            # ДОДЕЛАТЬ
+            if item and item != self.startItem and self.startItem.scenePos().y() != item.scenePos().y():
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
@@ -528,7 +599,6 @@ class Lamp(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
         self.name = "Lamp"
-        print(self.name, self.id)
 
 
 class Key(CustomItem):
@@ -624,7 +694,7 @@ class Speaker(CustomItem):
 
     def random_melody(self):
         random_index = random.randint(0, self.playlist.mediaCount() - 1)
-        self.player.setMedia(self.playlist.media(random_index))
+        self.playlist.setCurrentIndex(random_index)
         self.position = 0
         self.player.play()
 
@@ -636,23 +706,78 @@ class Speaker(CustomItem):
         self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/5.mp3')))
         self.playlist.setCurrentIndex(0)
 
-    def set_volume_down(self):
-        self.player.volume() - 10
+    def set_volume(self, value):
+        self.player.setVolume(value)
 
-    def set_volume_up(self):
-        self.player.volume() + 10
+    def listen_record(self):
+        url = QUrl.fromLocalFile('save/output.wav')
+        content = QMediaContent(url)
+        self.player.setMedia(content)
+        self.player.play()
 
 
-def include(item, on):
+class Microphone(CustomItem):
+    def __init__(self, pixmap, minus=True, plus=True, parent=None):
+        super().__init__(pixmap, minus, plus, parent)
+
+        self.name = "Microphone"
+
+    def record_audio(self):
+        # Задаем параметры записи
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 1
+        RATE = 44100
+        CHUNK = 1024
+        RECORD_SECONDS = 5
+        WAVE_OUTPUT_FILENAME = "save/output.wav"
+
+        # Создаем объект PyAudio
+        audio = pyaudio.PyAudio()
+
+        # Открываем поток для записи
+        stream = audio.open(format=FORMAT, channels=CHANNELS,
+                            rate=RATE, input=True,
+                            frames_per_buffer=CHUNK)
+
+        print("Recording...")
+
+        # Записываем звуковой сигнал в буфер
+        frames = []
+        for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
+            data = stream.read(CHUNK)
+            frames.append(data)
+
+        print("Finished recording.")
+
+        # Останавливаем поток и закрываем объект PyAudio
+        stream.stop_stream()
+        stream.close()
+        audio.terminate()
+
+        # Сохраняем записанный звуковой сигнал в файл
+        wf = wave.open(WAVE_OUTPUT_FILENAME, 'wb')
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(audio.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+
+
+def include(item, scene, on):
     if not on:
-        if any(x in item.wire_connection_plus for x in ["Battery", "Accumulator"]) and \
-                any(x in item.wire_connection_minus for x in ["Battery", "Accumulator", "Key"]):
-            if isinstance(item, Lamp):
-                item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
-            elif isinstance(item, Fan):
-                item.start()
-            elif isinstance(item, Speaker):
-                item.play_audio()
+        for item2 in scene.items():
+            if isinstance(item2, (Battery, Accumulator)):
+                if (item2.name in item.wire_connection_plus and item.id_connection_plus.count(item2.id) or "Key" in
+                    item.wire_connection_plus) and \
+                        (item2.name in item.wire_connection_minus and item.id_connection_minus.count(item2.id) or
+                         "Key" in item.wire_connection_minus):
+                    if isinstance(item, Lamp):
+                        item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
+                    elif isinstance(item, Fan):
+                        item.start()
+                    elif isinstance(item, Speaker):
+                        item.play_audio()
+                return True
     elif on:
         if isinstance(item, Lamp):
             item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
@@ -660,3 +785,4 @@ def include(item, on):
             item.stop()
         elif isinstance(item, Speaker):
             item.stop_audio()
+        return False
