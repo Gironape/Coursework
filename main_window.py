@@ -17,10 +17,10 @@ class Project(QMainWindow):
         super(Project, self).__init__()
         self.file_save_path = None
         self.toolbar = QToolBar("My main toolbar")
-        self.menuBar = None
-        self.start_stop = None
+        self.menuBar = QMenuBar(self)
+        self.start_stop = QAction(QIcon('Controls/start.png'), 'Start/Stop', self)
         self.controlbar = QToolBar("My main controlbar")
-        self.setWindowIcon(QIcon('Tape2.jpg'))
+        self.setWindowIcon(QIcon('VCP.png'))
         self.setFont(QFont('Arial', 20))
         self.setStyleSheet("background-color:;")
         self.setWindowTitle("VCP")
@@ -31,14 +31,14 @@ class Project(QMainWindow):
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
         self.for_redo = []
-        self.include_bool = None
+        self.include_id = []
 
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         ext = QMessageBox()
         ext.setWindowTitle("Выход")
         ext.setText("Вы действительно хотите выйти?")
         ext.setIcon(QMessageBox.Question)
-        ext.setWindowIcon(QIcon('Tape2.jpg'))
+        ext.setWindowIcon(QIcon('VCP.png'))
         ext.setStandardButtons(QMessageBox.Save | QMessageBox.Yes | QMessageBox.Close)
         ext.setInformativeText("Сохраните проект перед выходом")
         result = ext.exec_()
@@ -50,8 +50,7 @@ class Project(QMainWindow):
         else:
             event.ignore()
 
-    def create_menu_bar(self):
-        self.menuBar = QMenuBar(self)
+    def create_menu_bar(self) -> None:
         self.setMenuBar(self.menuBar)
 
         fileMenu = QMenu("&File", self)
@@ -81,13 +80,12 @@ class Project(QMainWindow):
         editMenu.addAction(clear)
         editMenu.triggered[QAction].connect(self.menu_bar_clicked)
 
-        # РАЗОБРАТЬСЯ С СОХРАНЕНИЕМ
-
-    def save_from_file(self):
+    def save_from_file(self) -> str:
         self.file_save_path, _ = QFileDialog.getSaveFileName(self, 'Save File', '', 'Pickle Files (*.pkl)')
+        print(type(self.file_save_path))
         return self.file_save_path
 
-    def save_file(self):
+    def save_file(self) -> None:
         if self.file_save_path:
             file_path = self.file_save_path
         else:
@@ -112,11 +110,11 @@ class Project(QMainWindow):
                 pickle.dump(items_data, file)
         self.file_save_path = None
 
-    def load_from_file(self):
+    def load_from_file(self) -> str:
         self.file_path, _ = QFileDialog.getOpenFileName(self, 'Open File', '', 'Pickle Files (*.pkl)')
         return self.file_path
 
-    def load_file(self):
+    def load_file(self) -> None:
         global id_elem
         id_elem = 0
         file_path = self.file_path
@@ -130,7 +128,7 @@ class Project(QMainWindow):
                     self.tool_bar_clicked(item_name)
                     for item in self.scene.items():
                         if isinstance(item, CustomItem) and type(item).__name__ == item_data['type']:
-                            if not item.wire_connection_plus and not item.wire_connection_minus:
+                            if not (item.wire_connection_plus and item.wire_connection_minus):
                                 item.setPos(QPointF(item_data['pos'][0], item_data['pos'][1]))
                                 item.wire_connection_plus = item_data['connect_plus']
                                 item.wire_connection_minus = item_data['connect_minus']
@@ -141,7 +139,7 @@ class Project(QMainWindow):
             except Exception as e:
                 print(f"An error occurred while loading the file: {e}")
 
-    def recovery_connect(self):
+    def recovery_connect(self) -> None:
         for item in self.scene.items():
             if isinstance(item, CustomItem) and item.wire_connection_minus:
                 if item.wire_connection_minus:
@@ -155,7 +153,7 @@ class Project(QMainWindow):
                             minus.addLine(newConnection)
                             plus.addLine(newConnection)
 
-    def create_tool_bar(self):
+    def create_tool_bar(self) -> None:
         battery = QAction(QIcon('Tools/battery.png'), 'Battery', self)
         key = QAction(QIcon('Tools/key.png'), 'Key', self)
         lamp = QAction(QIcon('Tools/lamp_off.png'), 'Lamp', self)
@@ -177,8 +175,7 @@ class Project(QMainWindow):
 
         self.toolbar.actionTriggered.connect(self.tool_bar_clicked)
 
-    def create_control_bar(self):
-        self.start_stop = QAction(QIcon('Controls/start.png'), 'Start/Stop', self)
+    def create_control_bar(self) -> None:
         next_track = QAction(QIcon('Controls/next.png'), 'Next melody', self)
         prev = QAction(QIcon('Controls/prev.png'), 'Previous melody', self)
         rand = QAction(QIcon('Controls/random.png'), 'Random melody', self)
@@ -204,7 +201,7 @@ class Project(QMainWindow):
         self.controlbar.actionTriggered.connect(self.control_bar_clicked)
         sld.valueChanged.connect(self.slider_changed)
 
-    def undo(self):
+    def undo(self) -> None:
         if self.scene.items():
             last = self.scene.items()
             if isinstance(last[0], ControlPoint):
@@ -224,18 +221,20 @@ class Project(QMainWindow):
             if not self.scene.items():
                 self.removeToolBar(self.controlbar)
 
-    def check_include(self, item):
+    def check_include(self, item) -> None:
         for item2 in self.scene.items():
-            if self.include_bool:
-                if isinstance(item2, CustomItem):
-                    if (item2.connect_plus in [item.start, item.end]) or (item2.connect_minus in
-                                                                          [item.start, item.end]):
-                        include(item2, self.scene, on=True)
-                        return
-            else:
-                return
+            if isinstance(item2, CustomItem) and item2.id in self.include_id:
+                if (item2.connect_plus in [item.start, item.end]) or (item2.connect_minus in
+                                                                      [item.start, item.end]):
+                    for item3 in self.scene.items():
+                        if isinstance(item3, (Battery, Accumulator)):
+                            if ((item3.connect_plus in [item.start, item.end]) or (item3.connect_minus in
+                                                                                   [item.start, item.end])) and \
+                                    (item3.name in item2.wire_connection_plus or item3.name in
+                                     item2.wire_connection_minus):
+                                include(item2, self.scene, self.include_id, on=True)
 
-    def redo(self):
+    def redo(self) -> None:
         if self.for_redo:
             if isinstance(self.for_redo[0], ControlPoint):
                 rev_redo = self.for_redo[::-1]
@@ -259,14 +258,14 @@ class Project(QMainWindow):
                         except Exception as e:
                             print(f"An error occurred while redo: {e}")
 
-    def clear_all(self):
+    def clear_all(self) -> None:
         if self.scene.items():
             self.scene.clear()
             global id_elem
             id_elem = 0
             self.removeToolBar(self.controlbar)
 
-    def menu_bar_clicked(self, action):
+    def menu_bar_clicked(self, action) -> None:
         if action.text() == "Save":
             self.save_file()
         elif action.text() == "Save as":
@@ -282,7 +281,7 @@ class Project(QMainWindow):
         elif action.text() == 'Clear all':
             self.clear_all()
 
-    def tool_bar_clicked(self, btn):
+    def tool_bar_clicked(self, btn) -> None:
         global id_elem
         id_elem += 1
         if not self.scene.items():
@@ -317,7 +316,7 @@ class Project(QMainWindow):
             micro_item = Microphone(micro.scaled(60, 60))
             self.scene.addItem(micro_item)
 
-    def control_bar_clicked(self, button):
+    def control_bar_clicked(self, button) -> None:
         if button.text() == "Start/Stop":
             self.start_stop_button()
         elif button.text() == "Next melody":
@@ -331,63 +330,67 @@ class Project(QMainWindow):
         elif button.text() == "Listen":
             self.listen_voice()
 
-    def record_voice(self):
+    def record_voice(self) -> None:
         for item in self.scene.items():
-            if isinstance(item, Microphone):
+            if isinstance(item, Microphone) and item.id in self.include_id:
                 item.record_audio()
+        self.message_for_user()
 
-    def listen_voice(self):
+    def listen_voice(self) -> None:
         for item in self.scene.items():
-            if isinstance(item, Speaker):
+            if isinstance(item, Speaker) and item.id in self.include_id:
                 item.listen_record()
+                return
+        self.message_for_user()
+
     def checker_action(self, switch):
         for item in self.scene.items():
-            if isinstance(item, Speaker) and switch and self.include_bool:
+            if isinstance(item, Speaker) and switch and item.id in self.include_id:
                 item.next_melody()
                 return
-            elif isinstance(item, Speaker) and not switch and self.include_bool:
+            elif isinstance(item, Speaker) and not switch and item.id in self.include_id:
                 item.prev_melody()
                 return
-        self.message_for_speaker()
+        self.message_for_user()
 
-    def rand_melody(self):
+    def rand_melody(self) -> None:
         for item in self.scene.items():
-            if isinstance(item, Speaker) and self.include_bool:
+            if isinstance(item, Speaker) and item.id in self.include_id:
                 item.random_melody()
                 return
-        self.message_for_speaker()
+        self.message_for_user()
 
-    def slider_changed(self, value):
+    def slider_changed(self, value) -> None:
         for item in self.scene.items():
-            if isinstance(item, Speaker) and self.include_bool:
+            if isinstance(item, Speaker) and item.id in self.include_id:
                 item.set_volume(value)
                 return
-        self.message_for_speaker()
+        self.message_for_user()
 
-    def start_stop_button(self):
+    def start_stop_button(self) -> None:
         if self.start_stop.property("state") is None or self.start_stop.property("state") == "on":
             self.start_stop.setIcon(QIcon('Controls/stop.png'))
             self.start_stop.setProperty("state", "off")
             for item in self.scene.items():
-                if isinstance(item, CustomItem):
-                    self.include_bool = include(item, self.scene, on=False)
+                if isinstance(item, (Lamp, Speaker, Fan, Microphone)) and not self.include_id.count(item.id):
+                    include(item, self.scene, self.include_id, on=False)
         else:
             self.start_stop.setIcon(QIcon('Controls/start.png'))
             self.start_stop.setProperty("state", "on")
             for item in self.scene.items():
-                if isinstance(item, CustomItem):
-                    self.include_bool = include(item, self.scene, on=True)
+                if isinstance(item, (Lamp, Speaker, Fan, Microphone)):
+                    include(item, self.scene, self.include_id, on=True)
 
-    def message_for_speaker(self):
+    def message_for_user(self) -> None:
         err = QMessageBox()
         err.setWindowTitle("Информация")
         err.setText("Данное действие пока не доступно")
         err.setIcon(QMessageBox.Information)
-        err.setWindowIcon(QIcon('Tape2.jpg'))
+        err.setWindowIcon(QIcon('VCP.png'))
         err.setStandardButtons(QMessageBox.Close)
         err.setInformativeText("Дополнительная информация")
-        err.setDetailedText('Данные инструменты предназначены для управления динамиком. Чтобы их использовать,'
-                            ' подключите ваш динамик в сеть и нажмите кнопку "Start"')
+        err.setDetailedText('Данные инструменты предназначены для управления элементами схемы. Чтобы их использовать,'
+                            ' подключите ваше устройство в сеть и нажмите кнопку "Start"')
         err.exec_()
         if QMessageBox.Close:
             err.close()
@@ -433,20 +436,16 @@ class Scene(QtWidgets.QGraphicsScene):
     def mouseReleaseEvent(self, event):
         if self.newConnection:
             item = self.controlPointAt(event.scenePos())
-            # ДОДЕЛАТЬ
-            if item and item != self.startItem and self.startItem.scenePos().y() != item.scenePos().y():
+            if item and item != self.startItem:
                 self.newConnection.setEnd(item)
                 if self.startItem.addLine(self.newConnection):
                     item.addLine(self.newConnection)
                     self.newConnection.add_connection()
                 else:
-                    # delete the connection if it exists; remove the following
-                    # line if this feature is not required
                     self.newConnection.delete_connection()
                     item.removeLine(self.newConnection)
                     self.startItem.removeLine(self.newConnection)
                     self.removeItem(self.newConnection)
-
             else:
                 self.removeItem(self.newConnection)
         self.startItem = self.newConnection = None
@@ -482,7 +481,7 @@ class Connection(QtWidgets.QGraphicsLineItem):
             self._line.setP2(source.scenePos())
         self.setLine(self._line)
 
-    def add_connection(self):
+    def add_connection(self) -> QGraphicsItem:
         for item in self.scene().items():
             if isinstance(item, CustomItem):
                 if item.connect_plus == self.start:
@@ -503,7 +502,7 @@ class Connection(QtWidgets.QGraphicsLineItem):
                                 item.id_connection_minus.append(item2.id)
                                 item2.id_connection_plus.append(item.id)
 
-    def delete_connection(self):
+    def delete_connection(self) -> None:
         for item in self.scene().items():
             if isinstance(item, CustomItem):
                 if item.connect_plus == self.start:
@@ -534,7 +533,7 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
         # this flag **must** be set after creating self.lines!
         self.setFlags(self.ItemSendsScenePositionChanges)
 
-    def addLine(self, lineItem):
+    def addLine(self, lineItem) -> bool:
         for existing in self.lines:
             if existing.controlPoints() == lineItem.controlPoints():
                 # another line with the same control points already exists
@@ -542,7 +541,7 @@ class ControlPoint(QtWidgets.QGraphicsEllipseItem):
         self.lines.append(lineItem)
         return True
 
-    def removeLine(self, lineItem):
+    def removeLine(self, lineItem) -> bool:
         for existing in self.lines:
             if existing.controlPoints() == lineItem.controlPoints():
                 self.scene().removeItem(existing)
@@ -643,36 +642,21 @@ class Fan(CustomItem):
                 self.pixmap_number = 0
 
     def start(self):
-        if self.lvl == 1:
-            self.timer.start(200)
-        if self.lvl == 2:
-            self.timer.start(100)
-        if self.lvl == 3:
-            self.timer.start(50)
+        self.timer.start(100)
 
     def stop(self):
         self.timer.stop()
-
-    def level(self, item):
-        if "Battery" in item.wire_connection_plus and "Battery" in item.wire_connection_minus:
-            self.lvl = 1
-        else:
-            self.lvl = 3
 
 
 class Speaker(CustomItem):
     def __init__(self, pixmap, minus=True, plus=True, parent=None):
         super().__init__(pixmap, minus, plus, parent)
-        try:
-            self.name = "Speaker"
-            self.player = QMediaPlayer()
-            self.playlist = QMediaPlaylist()
-            self.play_list()
-            self.player.setPlaylist(self.playlist)  # Устанавливаем плейлист для плеера
-            self.position = self.player.position()  # Инициализируем позицию воспроизведения
-
-        except Exception as e:
-            print(f"An error occurred while initializing Speaker: {e}")
+        self.name = "Speaker"
+        self.player = QMediaPlayer()
+        self.playlist = QMediaPlaylist()
+        self.play_list()
+        self.player.setPlaylist(self.playlist)
+        self.position = self.player.position()
 
     def play_audio(self):
         self.player.setPosition(self.position)
@@ -704,15 +688,15 @@ class Speaker(CustomItem):
         self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/3.mp3')))
         self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/4.mp3')))
         self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('Speaker/5.mp3')))
+        self.playlist.addMedia(QMediaContent(QUrl.fromLocalFile('save/output.wav')))
         self.playlist.setCurrentIndex(0)
 
     def set_volume(self, value):
         self.player.setVolume(value)
 
     def listen_record(self):
-        url = QUrl.fromLocalFile('save/output.wav')
-        content = QMediaContent(url)
-        self.player.setMedia(content)
+        self.playlist.setCurrentIndex(self.playlist.mediaCount() - 1)
+        self.position = 0
         self.player.play()
 
 
@@ -763,26 +747,89 @@ class Microphone(CustomItem):
         wf.close()
 
 
-def include(item, scene, on):
+def include(item, scene, include_id, on):
+    electrical_elements = []
     if not on:
-        for item2 in scene.items():
-            if isinstance(item2, (Battery, Accumulator)):
-                if (item2.name in item.wire_connection_plus and item.id_connection_plus.count(item2.id) or "Key" in
-                    item.wire_connection_plus) and \
-                        (item2.name in item.wire_connection_minus and item.id_connection_minus.count(item2.id) or
-                         "Key" in item.wire_connection_minus):
-                    if isinstance(item, Lamp):
-                        item.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
-                    elif isinstance(item, Fan):
-                        item.start()
-                    elif isinstance(item, Speaker):
-                        item.play_audio()
-                return True
+        try:
+            serial_elements(item, scene, electrical_elements)
+            print(electrical_elements)
+            if any(x in electrical_elements for x in item.id_connection_plus) and \
+                    any(x in electrical_elements for x in item.id_connection_minus):
+                include_id.append(item.id)
+                if len(item.id_connection_plus) >= 2 and len(item.id_connection_minus) >= 2:
+                    parallel_connection(item, scene, include_id)
+            elif any(x in electrical_elements for x in item.id_connection_plus):
+                include_id.append(item.id)
+                serial_connection(item, scene, include_id, electrical_elements)
+            for item3 in scene.items():
+                if isinstance(item3, Lamp) and item3.id in include_id:
+                    item3.setPixmap(QPixmap('Tools/lamp_on.png').scaled(60, 60))
+                elif isinstance(item3, Fan) and item3.id in include_id:
+                    item3.start()
+                elif isinstance(item3, Speaker) and item3.id in include_id:
+                    item3.play_audio()
+        except Exception as e:
+            print(f"An error occurred while include: {e}")
     elif on:
-        if isinstance(item, Lamp):
+        if isinstance(item, Lamp) and item.id in include_id:
             item.setPixmap(QPixmap('Tools/lamp_off.png').scaled(60, 60))
-        elif isinstance(item, Fan):
+            include_id.remove(item.id)
+        elif isinstance(item, Fan) and item.id in include_id:
             item.stop()
-        elif isinstance(item, Speaker):
+            include_id.remove(item.id)
+        elif isinstance(item, Speaker) and item.id in include_id:
             item.stop_audio()
-        return False
+            include_id.remove(item.id)
+        elif isinstance(item, Microphone) and item.id in include_id:
+            include_id.remove(item.id)
+        print('uydfs', include_id)
+        return include_id
+
+
+def parallel_connection(item, scene, include_id):
+    for item2 in scene.items():
+        if isinstance(item2, (Lamp, Fan, Speaker, Microphone, Key)) and not include_id.count(
+                item2.id) and item2.id != item.id:
+            if item2.id_connection_plus.count(item.id) and item2.id_connection_minus.count(item.id):
+                include_id.append(item2.id)
+                if len(item2.id_connection_plus) == len(item2.id_connection_minus) >= 2:
+                    return parallel_connection(item2, scene, include_id)
+                else:
+                    return parallel_connection(item, scene, include_id)
+    return include_id
+
+
+def serial_connection(item, scene, include_id, el_elem):
+    for item2 in scene.items():
+        if isinstance(item2, CustomItem) and not el_elem.count(item2.id) and not include_id.count(item2.id):
+            if item.id_connection_minus.count(item2.id) and not any(x in el_elem for x in item2.id_connection_minus):
+                include_id.append(item2.id)
+                return serial_connection(item2, scene, include_id, el_elem)
+            elif item.id_connection_minus.count(item2.id) and any(x in el_elem for x in item2.id_connection_minus):
+                include_id.append(item2.id)
+                return include_id
+
+
+def serial_elements(item, scene, electrical_elements):
+    for elem in scene.items():
+        if isinstance(elem, (Battery, Accumulator, Key)) and not electrical_elements.count(elem):
+            if item.id in elem.id_connection_plus and item.id in elem.id_connection_minus:
+                electrical_elements.append(elem.id)
+                return electrical_elements
+            elif not any(x in elem.wire_connection_plus for x in ['Battery', 'Accumulator', 'Key']) and not\
+                    any(x in elem.wire_connection_minus for x in ['Battery', 'Accumulator', 'Key']):
+                electrical_elements.append(elem.id)
+                return electrical_elements
+                pass
+            elif item.id not in elem.id_connection_plus and item.id in elem.id_connection_minus:
+                if any(x in elem.wire_connection_plus for x in ['Battery', 'Accumulator', 'Key']):
+                    electrical_elements.append(elem.id)
+                    return serial_elements(elem, scene, electrical_elements)
+                else:
+                    electrical_elements.append(elem.id)
+                    return electrical_elements
+            elif item.id not in elem.id_connection_minus:
+                if any(x in elem.id_connection_minus for x in electrical_elements) and \
+                        any(x in elem.wire_connection_plus for x in ['Lamp', 'Fan', 'Speaker', 'Microphone', 'Key']):
+                    electrical_elements.append(elem.id)
+                    return electrical_elements
